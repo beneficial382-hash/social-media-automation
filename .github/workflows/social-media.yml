@@ -1,72 +1,709 @@
-name: AELAMA Daily Social Media Automation
+name: Fazl Ullah Azaad Daily Social Media Automation
 
 on:
   workflow_dispatch:
 
+  schedule:
+    # Runs every day at 6:00 AM UTC.
+    # Buffer will then place the posts into each channel's queue.
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: read
+
 jobs:
-  generate-content:
+  generate-and-publish:
     runs-on: ubuntu-latest
 
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+
+      CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+      CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+      CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+
     steps:
-      - name: Generate motivational content
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Generate and publish daily social media post
+        shell: python
         run: |
-          RESPONSE=$(curl --fail-with-body -sS \
-            -X POST \
-            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/zai-org/glm-4.7-flash" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "messages": [
-                {
-                  "role": "system",
-                  "content": "You are AELAMA social media content strategist. Return ONLY valid JSON. Do not include reasoning, analysis, markdown, or code fences."
-                },
-                {
-                  "role": "user",
-                  "content": "Create one original, powerful, realistic and meaningful motivational social media post about real life. Avoid fake quotes, clichés and unsupported claims. Return exactly this JSON structure: {\"caption\":\"...\",\"description\":\"...\",\"seo_keywords\":[\"...\"],\"hashtags\":[\"...\"],\"image_prompt\":\"...\"}. The image_prompt must describe a powerful, realistic, professional vertical social media image with absolutely no text, letters, logos, or words."
-                }
-              ]
-            }')
-
-          echo "AI response received."
-
-          echo "$RESPONSE" | python3 -c '
+          import os
           import json
-          import sys
+          import base64
+          import requests
+          from datetime import datetime
 
-          response = json.load(sys.stdin)
+          # ============================================================
+          # CONFIGURATION
+          # ============================================================
+
+          CF_ACCOUNT_ID = os.environ["CLOUDFLARE_ACCOUNT_ID"]
+          CF_TOKEN = os.environ["CLOUDFLARE_API_TOKEN"]
+
+          BUFFER_API_KEY = os.environ["BUFFER_API_KEY"]
+
+          CLOUDINARY_CLOUD_NAME = os.environ["CLOUDINARY_CLOUD_NAME"]
+          CLOUDINARY_API_KEY = os.environ["CLOUDINARY_API_KEY"]
+          CLOUDINARY_API_SECRET = os.environ["CLOUDINARY_API_SECRET"]
+
+          CF_HEADERS = {
+              "Authorization": f"Bearer {CF_TOKEN}",
+              "Content-Type": "application/json"
+          }
+
+          BUFFER_HEADERS = {
+              "Authorization": f"Bearer {BUFFER_API_KEY}",
+              "Content-Type": "application/json"
+          }
+
+
+          # ============================================================
+          # 1. GENERATE CONTENT WITH CLOUDFLARE AI
+          # ============================================================
+
+          print("Generating original social media content...")
+
+          prompt = """
+          You are the professional personal-brand social media content
+          strategist for Fazl Ullah Azaad.
+
+          Create ONE original, powerful, realistic, intelligent and
+          meaningful motivational and inspirational social media post
+          about real life.
+
+          The content should naturally relate to themes such as:
+
+          - personal growth
+          - resilience
+          - discipline
+          - consistency
+          - self-respect
+          - overcoming difficulties
+          - career growth
+          - learning
+          - leadership
+          - realistic success
+          - human experiences
+
+          IMPORTANT RULES:
+
+          1. This content is for Fazl Ullah Azaad's personal social media,
+             NOT for AELAMA.
+
+          2. Do not invent quotations.
+
+          3. Do not attribute quotes or statements to famous people.
+
+          4. Do not make unsupported factual claims.
+
+          5. Avoid generic motivational clichés.
+
+          6. Make the content realistic, emotionally meaningful and
+             intellectually valuable.
+
+          7. The content must be suitable for Facebook, Instagram and
+             LinkedIn.
+
+          8. Create relevant SEO keywords.
+
+          9. Create relevant and natural hashtags.
+
+          10. Create a detailed image-generation prompt for a realistic,
+              cinematic and powerful vertical social-media image.
+
+          11. The image must contain:
+              NO text
+              NO words
+              NO letters
+              NO logos
+              NO watermark
+
+          Return ONLY valid JSON.
+
+          Use exactly this structure:
+
+          {
+            "caption": "A powerful original caption",
+            "description": "A meaningful and engaging supporting description",
+            "seo_keywords": [
+              "keyword one",
+              "keyword two",
+              "keyword three",
+              "keyword four",
+              "keyword five"
+            ],
+            "hashtags": [
+              "#HashtagOne",
+              "#HashtagTwo",
+              "#HashtagThree",
+              "#HashtagFour",
+              "#HashtagFive"
+            ],
+            "image_prompt": "A detailed realistic cinematic vertical image prompt with no text, no words, no letters, no logos and no watermark"
+          }
+          """
+
+          glm_url = (
+              f"https://api.cloudflare.com/client/v4/accounts/"
+              f"{CF_ACCOUNT_ID}/ai/run/"
+              f"@cf/zai-org/glm-4.7-flash"
+          )
+
+          glm_response = requests.post(
+              glm_url,
+              headers=CF_HEADERS,
+              json={
+                  "messages": [
+                      {
+                          "role": "user",
+                          "content": prompt
+                      }
+                  ],
+                  "max_completion_tokens": 1000
+              },
+              timeout=180
+          )
+
+          glm_response.raise_for_status()
+
+          glm_data = glm_response.json()
+
+          if not glm_data.get("success"):
+              raise RuntimeError(
+                  f"Cloudflare content generation failed: {glm_data}"
+              )
+
+          content = (
+              glm_data
+              .get("result", {})
+              .get("choices", [{}])[0]
+              .get("message", {})
+              .get("content", "")
+          )
+
+          if not content:
+              raise RuntimeError(
+                  f"No generated content was found. Response: {glm_data}"
+              )
+
+          content = content.strip()
+
+          # Remove markdown code fences if the AI adds them.
+          if content.startswith("```"):
+              lines = content.splitlines()
+
+              if lines:
+                  lines = lines[1:]
+
+              if lines and lines[-1].strip() == "```":
+                  lines = lines[:-1]
+
+              content = "\n".join(lines).strip()
 
           try:
-              content = response["result"]["choices"][0]["message"]["content"]
-              post = json.loads(content)
+              post_data = json.loads(content)
 
-              print("")
-              print("==========================================")
-              print("AELAMA DAILY SOCIAL MEDIA POST")
-              print("==========================================")
-              print("")
-              print("CAPTION:")
-              print(post["caption"])
-              print("")
-              print("DESCRIPTION:")
-              print(post["description"])
-              print("")
-              print("SEO KEYWORDS:")
-              print(", ".join(post["seo_keywords"]))
-              print("")
-              print("HASHTAGS:")
-              print(" ".join(post["hashtags"]))
-              print("")
-              print("IMAGE PROMPT:")
-              print(post["image_prompt"])
-              print("")
-              print("==========================================")
+          except json.JSONDecodeError as error:
+              raise RuntimeError(
+                  f"AI did not return valid JSON: {error}\n\n"
+                  f"Returned content:\n{content}"
+              )
 
-          except Exception as e:
-              print("Error parsing generated content:", e)
-              print(json.dumps(response, indent=2))
-              sys.exit(1)
-          '
+          required_fields = [
+              "caption",
+              "description",
+              "seo_keywords",
+              "hashtags",
+              "image_prompt"
+          ]
+
+          for field in required_fields:
+
+              if field not in post_data:
+
+                  raise RuntimeError(
+                      f"Generated content is missing: {field}"
+                  )
+
+          print("Content generated successfully.")
+
+
+          # ============================================================
+          # 2. GENERATE IMAGE WITH CLOUDFLARE FLUX.1 SCHNELL
+          # ============================================================
+
+          print("Generating social media image...")
+
+          flux_url = (
+              f"https://api.cloudflare.com/client/v4/accounts/"
+              f"{CF_ACCOUNT_ID}/ai/run/"
+              f"@cf/black-forest-labs/flux-1-schnell"
+          )
+
+          seed = int(datetime.utcnow().timestamp())
+
+          flux_response = requests.post(
+              flux_url,
+              headers=CF_HEADERS,
+              json={
+                  "prompt": post_data["image_prompt"],
+                  "steps": 4,
+                  "seed": seed
+              },
+              timeout=300
+          )
+
+          flux_response.raise_for_status()
+
+          flux_data = flux_response.json()
+
+          if not flux_data.get("success"):
+              raise RuntimeError(
+                  f"Cloudflare image generation failed: {flux_data}"
+              )
+
+          image_base64 = (
+              flux_data
+              .get("result", {})
+              .get("image")
+          )
+
+          if not image_base64:
+              raise RuntimeError(
+                  f"No generated image was found: {flux_data}"
+              )
+
+          image_path = "fazl-ullah-azaad-post.jpg"
+
+          with open(image_path, "wb") as image_file:
+
+              image_file.write(
+                  base64.b64decode(image_base64)
+              )
+
+          print("Image generated successfully.")
+
+
+          # ============================================================
+          # 3. UPLOAD IMAGE TO CLOUDINARY
+          # ============================================================
+
+          print("Uploading image to Cloudinary...")
+
+          cloudinary_url = (
+              f"https://api.cloudinary.com/v1_1/"
+              f"{CLOUDINARY_CLOUD_NAME}/image/upload"
+          )
+
+          with open(image_path, "rb") as image_file:
+
+              cloudinary_response = requests.post(
+                  cloudinary_url,
+                  auth=(
+                      CLOUDINARY_API_KEY,
+                      CLOUDINARY_API_SECRET
+                  ),
+                  files={
+                      "file": (
+                          image_path,
+                          image_file,
+                          "image/jpeg"
+                      )
+                  },
+                  data={
+                      "folder": "fazl-ullah-azaad-social-media"
+                  },
+                  timeout=180
+              )
+
+          cloudinary_response.raise_for_status()
+
+          cloudinary_data = cloudinary_response.json()
+
+          image_url = cloudinary_data.get("secure_url")
+
+          if not image_url:
+
+              raise RuntimeError(
+                  f"Cloudinary did not return a public image URL: "
+                  f"{cloudinary_data}"
+              )
+
+          print("Image uploaded successfully.")
+
+
+          # ============================================================
+          # 4. CREATE FINAL POST TEXT
+          # ============================================================
+
+          print("Preparing social media post...")
+
+          caption = str(
+              post_data["caption"]
+          ).strip()
+
+          description = str(
+              post_data["description"]
+          ).strip()
+
+          seo_keywords = post_data["seo_keywords"]
+
+          hashtags = post_data["hashtags"]
+
+          if isinstance(hashtags, list):
+
+              hashtags_text = " ".join(
+                  str(tag).strip()
+                  for tag in hashtags
+              )
+
+          else:
+
+              hashtags_text = str(
+                  hashtags
+              ).strip()
+
+          final_post_text = (
+              f"{caption}\n\n"
+              f"{description}\n\n"
+              f"{hashtags_text}"
+          )
+
+
+          # ============================================================
+          # 5. GET BUFFER ORGANIZATION
+          # ============================================================
+
+          print("Finding Buffer organization...")
+
+          organization_query = """
+          query {
+            account {
+              organizations {
+                id
+                name
+              }
+            }
+          }
+          """
+
+          organization_response = requests.post(
+              "https://api.buffer.com",
+              headers=BUFFER_HEADERS,
+              json={
+                  "query": organization_query
+              },
+              timeout=120
+          )
+
+          organization_response.raise_for_status()
+
+          organization_data = organization_response.json()
+
+          if organization_data.get("errors"):
+
+              raise RuntimeError(
+                  f"Buffer organization error: "
+                  f"{organization_data['errors']}"
+              )
+
+          organizations = (
+              organization_data
+              .get("data", {})
+              .get("account", {})
+              .get("organizations", [])
+          )
+
+          if not organizations:
+
+              raise RuntimeError(
+                  "No Buffer organization was found."
+              )
+
+          organization_id = organizations[0]["id"]
+
+          print(
+              f"Using Buffer organization: "
+              f"{organizations[0].get('name', organization_id)}"
+          )
+
+
+          # ============================================================
+          # 6. GET CONNECTED BUFFER CHANNELS
+          # ============================================================
+
+          print("Finding connected social media channels...")
+
+          channels_query = """
+          query GetChannels($organizationId: String!) {
+            channels(
+              input: {
+                organizationId: $organizationId
+              }
+            ) {
+              id
+              name
+              displayName
+              service
+            }
+          }
+          """
+
+          channels_response = requests.post(
+              "https://api.buffer.com",
+              headers=BUFFER_HEADERS,
+              json={
+                  "query": channels_query,
+                  "variables": {
+                      "organizationId": organization_id
+                  }
+              },
+              timeout=120
+          )
+
+          channels_response.raise_for_status()
+
+          channels_data = channels_response.json()
+
+          if channels_data.get("errors"):
+
+              raise RuntimeError(
+                  f"Buffer channel error: "
+                  f"{channels_data['errors']}"
+              )
+
+          channels = (
+              channels_data
+              .get("data", {})
+              .get("channels", [])
+          )
+
+          target_services = {
+              "facebook",
+              "instagram",
+              "linkedin"
+          }
+
+          target_channels = []
+
+          for channel in channels:
+
+              service = str(
+                  channel.get("service", "")
+              ).lower()
+
+              if service in target_services:
+
+                  target_channels.append(channel)
+
+          if not target_channels:
+
+              raise RuntimeError(
+                  "No Facebook, Instagram or LinkedIn "
+                  "channels were found in Buffer."
+              )
+
+          print(
+              f"Found {len(target_channels)} target channels."
+          )
+
+
+          # ============================================================
+          # 7. CREATE POSTS IN BUFFER
+          # ============================================================
+
+          print("Adding posts to Buffer queues...")
+
+          create_post_mutation = """
+          mutation CreatePost(
+            $text: String!,
+            $channelId: String!,
+            $imageUrl: String!
+          ) {
+            createPost(
+              input: {
+                text: $text
+                channelId: $channelId
+                schedulingType: automatic
+                mode: addToQueue
+                assets: [
+                  {
+                    image: {
+                      url: $imageUrl
+                    }
+                  }
+                ]
+              }
+            ) {
+              ... on PostActionSuccess {
+                post {
+                  id
+                  text
+                  dueAt
+                }
+              }
+
+              ... on MutationError {
+                message
+              }
+            }
+          }
+          """
+
+          successful_channels = []
+          failed_channels = []
+
+          for channel in target_channels:
+
+              channel_id = channel["id"]
+
+              channel_name = (
+                  channel.get("displayName")
+                  or channel.get("name")
+                  or channel_id
+              )
+
+              print(
+                  f"Creating post for: {channel_name}"
+              )
+
+              create_response = requests.post(
+                  "https://api.buffer.com",
+                  headers=BUFFER_HEADERS,
+                  json={
+                      "query": create_post_mutation,
+                      "variables": {
+                          "text": final_post_text,
+                          "channelId": channel_id,
+                          "imageUrl": image_url
+                      }
+                  },
+                  timeout=120
+              )
+
+              create_response.raise_for_status()
+
+              create_data = create_response.json()
+
+              if create_data.get("errors"):
+
+                  failed_channels.append({
+                      "channel": channel_name,
+                      "error": create_data["errors"]
+                  })
+
+                  continue
+
+              result = (
+                  create_data
+                  .get("data", {})
+                  .get("createPost", {})
+              )
+
+              if result.get("post"):
+
+                  successful_channels.append(
+                      channel_name
+                  )
+
+                  print(
+                      f"Successfully added to queue: "
+                      f"{channel_name}"
+                  )
+
+              else:
+
+                  failed_channels.append({
+                      "channel": channel_name,
+                      "error": result.get(
+                          "message",
+                          "Unknown Buffer error"
+                      )
+                  })
+
+
+          # ============================================================
+          # 8. SAVE RECORD OF THE GENERATED POST
+          # ============================================================
+
+          output = {
+              "creator": "Fazl Ullah Azaad",
+              "generated_at_utc": (
+                  datetime.utcnow()
+                  .isoformat()
+                  + "Z"
+              ),
+              "caption": post_data["caption"],
+              "description": post_data["description"],
+              "seo_keywords": seo_keywords,
+              "hashtags": hashtags,
+              "image_prompt": post_data["image_prompt"],
+              "image_url": image_url,
+              "successful_channels": successful_channels,
+              "failed_channels": failed_channels
+          }
+
+          with open(
+              "generated-social-media-post.json",
+              "w",
+              encoding="utf-8"
+          ) as output_file:
+
+              json.dump(
+                  output,
+                  output_file,
+                  ensure_ascii=False,
+                  indent=2
+              )
+
+
+          # ============================================================
+          # 9. FINAL RESULT
+          # ============================================================
+
+          print("")
+          print("=" * 60)
+          print(
+              "FAZL ULLAH AZAAD SOCIAL MEDIA AUTOMATION COMPLETE"
+          )
+          print("=" * 60)
+
+          print(
+              "Successful channels:",
+              successful_channels
+          )
+
+          print(
+              "Failed channels:",
+              failed_channels
+          )
+
+          print(
+              "Public image URL:",
+              image_url
+          )
+
+          if failed_channels:
+
+              raise RuntimeError(
+                  f"Some social media posts failed: "
+                  f"{failed_channels}"
+              )
+
+          if not successful_channels:
+
+              raise RuntimeError(
+                  "No social media posts were created."
+              )
+
+
+      - name: Save generated post record
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fazl-ullah-azaad-social-media-post
+          path: generated-social-media-post.json
+          if-no-files-found: ignore
+          retention-days: 30

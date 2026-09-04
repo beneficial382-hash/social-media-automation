@@ -1,0 +1,16 @@
+name: Test Buffer Connection
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-buffer:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get Buffer Channels
+        run: |
+          curl -X POST https://api.buffer.com \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.BUFFER_API_KEY }}" \
+            -d '{"query":"query { account { organizations { id name channels { id name service } } } }"}'

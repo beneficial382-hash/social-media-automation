@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Generate post, SEO and image prompt
+      - name: Generate social media content
         run: |
           curl --fail-with-body -sS \
             -X POST \
@@ -19,11 +19,116 @@ jobs:
               "messages": [
                 {
                   "role": "system",
-                  "content": "You are the official AELAMA social media content strategist."
+                  "content": "You are the official AELAMA social media content strategist. Return valid JSON only. Do not use markdown."
                 },
                 {
                   "role": "user",
-                  "content": "Create one original, powerful, realistic and meaningful motivational social-media post about real life. Avoid fake quotes, clichés and unsupported claims. Return exactly these sections: CAPTION, DESCRIPTION, SEO_KEYWORDS, HASHTAGS, IMAGE_PROMPT. The IMAGE_PROMPT must describe a powerful, realistic, professional social-media image with no text or words inside the image."
+                  "content": "Create one original, powerful, realistic and meaningful motivational social-media post about real life. Avoid fake quotes, clichés and unsupported claims. Return exactly this JSON structure: {\"caption\":\"...\",\"description\":\"...\",\"seo_keywords\":[\"...\"],\"hashtags\":[\"...\"],\"image_prompt\":\"...\"}. The image_prompt must describe a realistic, professional and powerful vertical social-media image with absolutely no text, letters, logos or words."
                 }
               ]
-            }'
+            }' > cloudflare-response.json
+
+          cat cloudflare-response.json
+
+          python - <<'PY'
+          import json
+
+          with open("cloudflare-response.json") as f:
+              response = json.load(f)
+
+          # Extract the text returned by the Cloudflare LLM API
+          result = response["result"]
+
+          if isinstance(result, dict):
+              text = (
+                  result.get("response")
+                  or result.get("text")
+                  or result.get("content")
+              )
+          else:
+              text = str(result)
+
+          if not text:
+              raise ValueError("Could not find generated content.")
+
+          # Remove accidental markdown fences if the model adds them
+          text = text.strip()
+
+          if text.startswith("```"):
+              text = text.split("\n", 1)[1]
+              if text.rstrip().endswith("```"):
+                  text = text.rstrip()[:-3]
+
+          content = json.loads(text)
+
+          required = [
+              "caption",
+              "description",
+              "seo_keywords",
+              "hashtags",
+              "image_prompt"
+          ]
+
+          for field in required:
+              if field not in content:
+                  raise ValueError(f"Missing required field: {field}")
+
+          with open("content.json", "w") as f:
+              json.dump(content, f, indent=2, ensure_ascii=False)
+
+          with open("image-prompt.txt", "w") as f:
+              f.write(content["image_prompt"])
+
+          print("Content successfully extracted.")
+          PY
+
+      - name: Generate matching AI image
+        run: |
+          IMAGE_PROMPT=$(cat image-prompt.txt)
+
+          curl --fail-with-body -sS \
+            -X POST \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/ai/run/@cf/black-forest-labs/flux-1-schnell" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg prompt "$IMAGE_PROMPT" \
+              '{
+                prompt: $prompt,
+                steps: 4
+              }')" > image-response.json
+
+          python - <<'PY'
+          import json
+          import base64
+
+          with open("image-response.json") as f:
+              response = json.load(f)
+
+          image_data = response.get("result", {}).get("image")
+
+          if not image_data:
+              raise ValueError("Cloudflare did not return an image.")
+
+          with open("aelama-social-post.jpg", "wb") as f:
+              f.write(base64.b64decode(image_data))
+
+          print("Image successfully created.")
+          PY
+
+      - name: Display generated content
+        run: |
+          echo "========== AELAMA GENERATED CONTENT =========="
+          cat content.json
+          echo ""
+          echo "=============================================="
+
+      - name: Upload social media package
+        uses: actions/upload-artifact@v4
+        with:
+          name: aelama-social-media-post
+          path: |
+            content.json
+            image-prompt.txt
+            aelama-social-post.jpg
+          retention-days: 7

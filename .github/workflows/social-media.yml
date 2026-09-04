@@ -1,16 +1,16 @@
-name: Get Buffer Organization ID
+name: Get Buffer Channel IDs
 
 on:
   workflow_dispatch:
 
 jobs:
-  get-organization:
+  get-channels:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Get Buffer Organization
+      - name: Get Buffer Channels
         run: |
           curl -X POST https://api.buffer.com \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.BUFFER_API_KEY }}" \
-            -d '{"query":"query GetOrganizations { account { organizations { id name } } }"}'
+            -d '{"query":"query GetChannels { channels(input: { organizationId: \"6a9a212de914408f7472f279\" }) { id name displayName service } }"}'

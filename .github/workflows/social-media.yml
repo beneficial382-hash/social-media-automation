@@ -1,16 +1,23 @@
-name: Get Buffer Channel IDs
+name: Generate Daily Motivational Post
 
 on:
   workflow_dispatch:
 
 jobs:
-  get-channels:
+  generate-post:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Get Buffer Channels
+      - name: Generate motivational content with Gemini
         run: |
-          curl -X POST https://api.buffer.com \
+          curl -s \
             -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.BUFFER_API_KEY }}" \
-            -d '{"query":"query GetChannels { channels(input: { organizationId: \"6a9a212de914408f7472f279\" }) { id name displayName service } }"}'
+            -X POST \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${{ secrets.GEMINI_API_KEY }}" \
+            -d '{
+              "contents": [{
+                "parts": [{
+                  "text": "Create one original, powerful and realistic motivational and inspirational social-media post about real life. Avoid fake quotes, clichés and unsupported claims. Make it meaningful and relatable. Return: 1) a strong caption, 2) an engaging description, 3) relevant SEO keywords, and 4) appropriate hashtags for Facebook, Instagram and LinkedIn."
+                }]
+              }]
+            }'

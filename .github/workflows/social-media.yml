@@ -2,6 +2,8 @@ name: Generate Daily Motivational Post
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
 
 jobs:
   generate-post:
@@ -9,15 +11,86 @@ jobs:
 
     steps:
       - name: Generate motivational content with Gemini
+        id: generate
         run: |
-          curl -s \
+          RESPONSE=$(curl -s \
             -H "Content-Type: application/json" \
             -X POST \
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${{ secrets.GEMINI_API_KEY }}" \
             -d '{
               "contents": [{
                 "parts": [{
-                  "text": "Create one original, powerful and realistic motivational and inspirational social-media post about real life. Avoid fake quotes, clichés and unsupported claims. Make it meaningful and relatable. Return: 1) a strong caption, 2) an engaging description, 3) relevant SEO keywords, and 4) appropriate hashtags for Facebook, Instagram and LinkedIn."
+                  "text": "Create one original, powerful and realistic motivational and inspirational social-media post about real life. Avoid fake quotes, clichés and unsupported claims. Make it meaningful and relatable. Return ONLY the complete final post in plain text, including a strong caption, engaging description, relevant SEO keywords, and appropriate hashtags for Facebook, Instagram and LinkedIn."
                 }]
               }]
-            }'
+            }')
+
+          echo "$RESPONSE" > response.json
+
+          POST=$(jq -r '.candidates[0].content.parts[0].text' response.json)
+
+          if [ "$POST" = "null" ] || [ -z "$POST" ]; then
+            echo "Gemini did not generate a valid post."
+            cat response.json
+            exit 1
+          fi
+
+          {
+            echo "post<<EOF"
+            echo "$POST"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish to LinkedIn
+        env:
+          POST: ${{ steps.generate.outputs.post }}
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+        run: |
+          jq -n --arg text "$POST" '
+          {
+            query: "mutation CreatePost($text: String!) { createPost(input: { text: $text, channelId: \"6a9a260e065799be4684d272\", schedulingType: automatic, mode: addToQueue }) { ... on PostActionSuccess { post { id text dueAt } } ... on MutationError { message } } }",
+            variables: { text: $text }
+          }' > payload.json
+
+          curl -s \
+            -X POST \
+            "https://api.buffer.com" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $BUFFER_API_KEY" \
+            -d @payload.json
+
+      - name: Publish to Instagram
+        env:
+          POST: ${{ steps.generate.outputs.post }}
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+        run: |
+          jq -n --arg text "$POST" '
+          {
+            query: "mutation CreatePost($text: String!) { createPost(input: { text: $text, channelId: \"6a9a25d6065799be4684d1d9\", schedulingType: automatic, mode: addToQueue }) { ... on PostActionSuccess { post { id text dueAt } } ... on MutationError { message } } }",
+            variables: { text: $text }
+          }' > payload.json
+
+          curl -s \
+            -X POST \
+            "https://api.buffer.com" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $BUFFER_API_KEY" \
+            -d @payload.json
+
+      - name: Publish to Facebook
+        env:
+          POST: ${{ steps.generate.outputs.post }}
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+        run: |
+          jq -n --arg text "$POST" '
+          {
+            query: "mutation CreatePost($text: String!) { createPost(input: { text: $text, channelId: \"6a9a21de065799be4684c649\", schedulingType: automatic, mode: addToQueue }) { ... on PostActionSuccess { post { id text dueAt } } ... on MutationError { message } } }",
+            variables: { text: $text }
+          }' > payload.json
+
+          curl -s \
+            -X POST \
+            "https://api.buffer.com" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $BUFFER_API_KEY" \
+            -d @payload.json

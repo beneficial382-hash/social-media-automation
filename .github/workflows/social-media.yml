@@ -1,14 +1,14 @@
-name: Test Cloudflare AI
+name: AELAMA Daily Social Media Automation
 
 on:
   workflow_dispatch:
 
 jobs:
-  test-cloudflare:
+  generate-content:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Generate a motivational post
+      - name: Generate post, SEO and image prompt
         run: |
           curl --fail-with-body -sS \
             -X POST \
@@ -18,8 +18,12 @@ jobs:
             -d '{
               "messages": [
                 {
+                  "role": "system",
+                  "content": "You are the official AELAMA social media content strategist."
+                },
+                {
                   "role": "user",
-                  "content": "Create one short, original, realistic and powerful motivational post about real life. Include relevant SEO keywords and hashtags."
+                  "content": "Create one original, powerful, realistic and meaningful motivational social-media post about real life. Avoid fake quotes, clichés and unsupported claims. Return exactly these sections: CAPTION, DESCRIPTION, SEO_KEYWORDS, HASHTAGS, IMAGE_PROMPT. The IMAGE_PROMPT must describe a powerful, realistic, professional social-media image with no text or words inside the image."
                 }
               ]
             }'

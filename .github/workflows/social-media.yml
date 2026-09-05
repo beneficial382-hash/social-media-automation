@@ -42,7 +42,6 @@ jobs:
           import os
           import json
           import base64
-          import random
           import urllib.request
           import urllib.error
           from pathlib import Path
@@ -52,6 +51,7 @@ jobs:
 
           image_count = int(os.environ.get("IMAGE_COUNT", "1"))
           image_count = max(1, min(4, image_count))
+
 
           def cloudflare_request(model, payload):
               url = (
@@ -70,10 +70,20 @@ jobs:
               )
 
               try:
-                  with urllib.request.urlopen(request, timeout=180) as response:
-                      result = json.loads(response.read().decode("utf-8"))
+                  with urllib.request.urlopen(
+                      request,
+                      timeout=180
+                  ) as response:
+                      result = json.loads(
+                          response.read().decode("utf-8")
+                      )
+
               except urllib.error.HTTPError as error:
-                  body = error.read().decode("utf-8", errors="replace")
+                  body = error.read().decode(
+                      "utf-8",
+                      errors="replace"
+                  )
+
                   raise RuntimeError(
                       f"Cloudflare HTTP error {error.code}: {body}"
                   )
@@ -85,7 +95,9 @@ jobs:
 
               return result.get("result", result)
 
+
           print("Generating original social media content...")
+
 
           schema = {
               "type": "object",
@@ -93,27 +105,32 @@ jobs:
                   "caption": {
                       "type": "string"
                   },
+
                   "description": {
                       "type": "string"
                   },
+
                   "seo_keywords": {
                       "type": "array",
                       "items": {
                           "type": "string"
                       }
                   },
+
                   "facebook_instagram_hashtags": {
                       "type": "array",
                       "items": {
                           "type": "string"
                       }
                   },
+
                   "linkedin_hashtags": {
                       "type": "array",
                       "items": {
                           "type": "string"
                       }
                   },
+
                   "image_prompts": {
                       "type": "array",
                       "items": {
@@ -121,6 +138,7 @@ jobs:
                       }
                   }
               },
+
               "required": [
                   "caption",
                   "description",
@@ -131,37 +149,46 @@ jobs:
               ]
           }
 
+
           prompt = f"""
-          Create ONE original, powerful, realistic, intelligent and meaningful
-          social-media post for the personal brand of Fazl Ullah Azaad.
+          Create ONE completely original, powerful, realistic,
+          intelligent and meaningful social-media post for the
+          personal brand of Fazl Ullah Azaad.
 
           This is NOT content for AELAMA.
 
-          The topic must relate to real life and may focus on:
-          personal growth, resilience, discipline, consistency, self-respect,
-          overcoming difficulties, career growth, learning, leadership,
-          realistic success or meaningful human experiences.
+          The topic should relate to real life and may focus on:
+          personal growth, resilience, discipline, consistency,
+          self-respect, overcoming difficulties, career growth,
+          learning, leadership, realistic success or meaningful
+          human experiences.
 
           Requirements:
+
           - Completely original content.
           - Do not invent quotations.
           - Do not attribute quotes to famous people.
           - Do not make unsupported factual claims.
           - Avoid generic motivational clichés.
-          - Make the writing realistic, emotionally intelligent and meaningful.
+          - Make the writing realistic and emotionally intelligent.
+          - Make it meaningful and thought-provoking.
           - Suitable for Facebook, Instagram and LinkedIn.
-          - Write a strong caption and an engaging description.
+          - Write one strong caption.
+          - Write one engaging description.
           - Provide relevant SEO keywords.
-          - Provide natural hashtags specifically for Facebook/Instagram.
-          - Provide professional hashtags specifically for LinkedIn.
+          - Provide natural hashtags for Facebook and Instagram.
+          - Provide professional hashtags for LinkedIn.
           - Create exactly {image_count} different image prompts.
-          - Each image prompt must visually match the post.
-          - Images should be photorealistic, cinematic and professional.
-          - No text, letters, typography, logos or watermarks in the images.
-          - The images should be suitable for vertical social-media use.
+          - Each image must visually match the post.
+          - Images should be photorealistic and cinematic.
+          - Images should be professional and visually powerful.
+          - Absolutely no text, words, letters, logos or watermarks
+            inside the generated images.
+          - Images should be suitable for vertical social media.
 
           Return only the requested structured data.
           """
+
 
           content_payload = {
               "messages": [
@@ -169,31 +196,35 @@ jobs:
                       "role": "system",
                       "content": (
                           "You are an expert personal-brand social-media "
-                          "content strategist. Produce structured, original "
-                          "and authentic content."
+                          "content strategist. Create original, authentic "
+                          "and structured content."
                       )
                   },
+
                   {
                       "role": "user",
                       "content": prompt
                   }
               ],
+
               "response_format": {
                   "type": "json_schema",
                   "json_schema": schema
               },
+
               "max_tokens": 2000
           }
+
 
           content_result = cloudflare_request(
               "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
               content_payload
           )
 
+
           print("Cloudflare content response received.")
 
-          # Cloudflare JSON Mode commonly returns the structured object
-          # inside response/result depending on endpoint serialization.
+
           generated = (
               content_result.get("response")
               or content_result.get("output")
@@ -201,13 +232,16 @@ jobs:
               or content_result
           )
 
+
           if isinstance(generated, str):
               generated = json.loads(generated)
+
 
           if not isinstance(generated, dict):
               raise RuntimeError(
                   f"Could not parse generated content: {content_result}"
               )
+
 
           required_fields = [
               "caption",
@@ -218,10 +252,13 @@ jobs:
               "image_prompts"
           ]
 
+
           missing = [
-              field for field in required_fields
+              field
+              for field in required_fields
               if not generated.get(field)
           ]
+
 
           if missing:
               raise RuntimeError(
@@ -229,45 +266,59 @@ jobs:
                   f"{generated}"
               )
 
+
           image_prompts = generated["image_prompts"][:image_count]
+
 
           if len(image_prompts) < image_count:
               raise RuntimeError(
                   "The AI did not generate enough image prompts."
               )
 
+
           print("Content generated successfully.")
           print("Generating images...")
+
 
           output_dir = Path("generated_images")
           output_dir.mkdir(exist_ok=True)
 
           image_files = []
 
-          for index, image_prompt in enumerate(image_prompts, start=1):
+
+          for index, image_prompt in enumerate(
+              image_prompts,
+              start=1
+          ):
 
               final_image_prompt = (
                   f"{image_prompt}. "
                   "Photorealistic, cinematic, visually powerful, "
-                  "professional social-media photography, vertical composition. "
-                  "Absolutely no text, no words, no letters, no typography, "
-                  "no logos and no watermarks."
+                  "professional social-media photography, "
+                  "vertical composition. "
+                  "Absolutely no text, no words, no letters, "
+                  "no typography, no logos and no watermarks."
               )
 
+
               image_payload = {
-                  "prompt": final_image_prompt,
-                  "steps": 4,
-                  "seed": random.randint(1, 2147483647)
+                  "prompt": final_image_prompt
               }
 
-              print(f"Generating image {index}/{image_count}...")
+
+              print(
+                  f"Generating image {index}/{image_count}..."
+              )
+
 
               image_result = cloudflare_request(
                   "@cf/black-forest-labs/flux-1-schnell",
                   image_payload
               )
 
+
               image_base64 = image_result.get("image")
+
 
               if not image_base64:
                   raise RuntimeError(
@@ -275,24 +326,38 @@ jobs:
                       f"{image_result}"
                   )
 
-              image_path = output_dir / f"image_{index}.jpg"
+
+              image_path = (
+                  output_dir / f"image_{index}.jpg"
+              )
+
 
               with open(image_path, "wb") as image_file:
                   image_file.write(
                       base64.b64decode(image_base64)
                   )
 
+
               image_files.append(str(image_path))
 
-          seo_keywords = ", ".join(generated["seo_keywords"])
+
+          print("All images generated successfully.")
+
+
+          seo_keywords = ", ".join(
+              generated["seo_keywords"]
+          )
+
 
           fb_ig_hashtags = " ".join(
               generated["facebook_instagram_hashtags"]
           )
 
+
           linkedin_hashtags = " ".join(
               generated["linkedin_hashtags"]
           )
+
 
           instagram_facebook_text = (
               f"{generated['caption']}\n\n"
@@ -300,26 +365,50 @@ jobs:
               f"{fb_ig_hashtags}"
           )
 
+
           linkedin_text = (
               f"{generated['caption']}\n\n"
               f"{generated['description']}\n\n"
               f"{linkedin_hashtags}"
           )
 
+
           final_output = {
               "caption": generated["caption"],
+
               "description": generated["description"],
-              "seo_keywords": generated["seo_keywords"],
-              "facebook_instagram_hashtags":
-                  generated["facebook_instagram_hashtags"],
-              "linkedin_hashtags": generated["linkedin_hashtags"],
+
+              "seo_keywords": generated[
+                  "seo_keywords"
+              ],
+
+              "facebook_instagram_hashtags": generated[
+                  "facebook_instagram_hashtags"
+              ],
+
+              "linkedin_hashtags": generated[
+                  "linkedin_hashtags"
+              ],
+
               "image_prompts": image_prompts,
-              "instagram_facebook_text": instagram_facebook_text,
-              "linkedin_text": linkedin_text,
-              "image_files": image_files
+
+              "instagram_facebook_text":
+                  instagram_facebook_text,
+
+              "linkedin_text":
+                  linkedin_text,
+
+              "image_files":
+                  image_files
           }
 
-          with open("post_data.json", "w", encoding="utf-8") as file:
+
+          with open(
+              "post_data.json",
+              "w",
+              encoding="utf-8"
+          ) as file:
+
               json.dump(
                   final_output,
                   file,
@@ -327,23 +416,36 @@ jobs:
                   indent=2
               )
 
-          print("Content and images generated successfully.")
+
+          print("")
+          print("========================================")
+          print("SOCIAL MEDIA CONTENT GENERATED")
+          print("========================================")
+          print("")
+          print("CAPTION:")
+          print(generated["caption"])
+          print("")
+          print("DESCRIPTION:")
+          print(generated["description"])
+          print("")
+          print("SEO KEYWORDS:")
+          print(seo_keywords)
+          print("")
+          print("IMAGES:")
+          print(", ".join(image_files))
+          print("")
+          print("SUCCESS: CONTENT AND IMAGES ARE READY")
           PYTHON
 
       - name: Show generated post data
         run: |
           cat post_data.json
 
-      - name: Upload generated files as workflow artifacts
+      - name: Upload content and images
         uses: actions/upload-artifact@v4
         with:
           name: daily-social-media-content
           path: |
             post_data.json
             generated_images/
-
-      - name: Stop before publishing
-        run: |
-          echo "Content and images were generated successfully."
-          echo "The publishing stage requires the exact current Buffer API"
-          echo "request format and public image URLs."
+          retention-days: 7

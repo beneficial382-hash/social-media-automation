@@ -13,7 +13,7 @@ on:
         default: "1"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   generate-and-publish:
@@ -22,7 +22,6 @@ jobs:
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-
       BUFFER_API_TOKEN: ${{ secrets.BUFFER_API_TOKEN }}
 
       LINKEDIN_CHANNEL_ID: "6a9a260e065799be4684d272"
@@ -32,11 +31,11 @@ jobs:
       IMAGE_COUNT: ${{ github.event.inputs.image_count || '1' }}
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Generate content and images
-        id: generate
         run: |
           python3 <<'PYTHON'
           import os
@@ -54,6 +53,7 @@ jobs:
 
 
           def cloudflare_request(model, payload):
+
               url = (
                   f"https://api.cloudflare.com/client/v4/accounts/"
                   f"{account_id}/ai/run/{model}"
@@ -74,11 +74,13 @@ jobs:
                       request,
                       timeout=180
                   ) as response:
+
                       result = json.loads(
                           response.read().decode("utf-8")
                       )
 
               except urllib.error.HTTPError as error:
+
                   body = error.read().decode(
                       "utf-8",
                       errors="replace"
@@ -101,7 +103,9 @@ jobs:
 
           schema = {
               "type": "object",
+
               "properties": {
+
                   "caption": {
                       "type": "string"
                   },
@@ -191,7 +195,9 @@ jobs:
 
 
           content_payload = {
+
               "messages": [
+
                   {
                       "role": "system",
                       "content": (
@@ -238,6 +244,7 @@ jobs:
 
 
           if not isinstance(generated, dict):
+
               raise RuntimeError(
                   f"Could not parse generated content: {content_result}"
               )
@@ -261,6 +268,7 @@ jobs:
 
 
           if missing:
+
               raise RuntimeError(
                   f"Generated content is missing fields {missing}: "
                   f"{generated}"
@@ -271,6 +279,7 @@ jobs:
 
 
           if len(image_prompts) < image_count:
+
               raise RuntimeError(
                   "The AI did not generate enough image prompts."
               )
@@ -321,6 +330,7 @@ jobs:
 
 
               if not image_base64:
+
                   raise RuntimeError(
                       f"No image returned for image {index}: "
                       f"{image_result}"
@@ -332,7 +342,11 @@ jobs:
               )
 
 
-              with open(image_path, "wb") as image_file:
+              with open(
+                  image_path,
+                  "wb"
+              ) as image_file:
+
                   image_file.write(
                       base64.b64decode(image_base64)
                   )
@@ -342,11 +356,6 @@ jobs:
 
 
           print("All images generated successfully.")
-
-
-          seo_keywords = ", ".join(
-              generated["seo_keywords"]
-          )
 
 
           fb_ig_hashtags = " ".join(
@@ -374,21 +383,18 @@ jobs:
 
 
           final_output = {
+
               "caption": generated["caption"],
 
               "description": generated["description"],
 
-              "seo_keywords": generated[
-                  "seo_keywords"
-              ],
+              "seo_keywords": generated["seo_keywords"],
 
-              "facebook_instagram_hashtags": generated[
-                  "facebook_instagram_hashtags"
-              ],
+              "facebook_instagram_hashtags":
+                  generated["facebook_instagram_hashtags"],
 
-              "linkedin_hashtags": generated[
-                  "linkedin_hashtags"
-              ],
+              "linkedin_hashtags":
+                  generated["linkedin_hashtags"],
 
               "image_prompts": image_prompts,
 
@@ -429,7 +435,10 @@ jobs:
           print(generated["description"])
           print("")
           print("SEO KEYWORDS:")
-          print(seo_keywords)
+          print(", ".join(generated["seo_keywords"]))
+          print("")
+          print("HASHTAGS:")
+          print(fb_ig_hashtags)
           print("")
           print("IMAGES:")
           print(", ".join(image_files))
@@ -437,11 +446,366 @@ jobs:
           print("SUCCESS: CONTENT AND IMAGES ARE READY")
           PYTHON
 
-      - name: Show generated post data
+
+      - name: Create public image URLs
+        id: host_images
+        env:
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
         run: |
+          set -e
+
+          git config user.name "Fazl Ullah Azaad Automation"
+          git config user.email "actions@github.com"
+
+          git fetch origin media || true
+
+          if git show-ref --verify --quiet refs/remotes/origin/media; then
+            git checkout -B media origin/media
+          else
+            git checkout --orphan media
+            git rm -rf . || true
+          fi
+
+          mkdir -p social-media-images
+
+          DATE_FOLDER="$(date -u +%Y-%m-%d)"
+          IMAGE_FOLDER="social-media-images/${DATE_FOLDER}/${RUN_ID}"
+
+          mkdir -p "${IMAGE_FOLDER}"
+
+          cp ../social-media-automation/generated_images/* \
+             "${IMAGE_FOLDER}/"
+
+          git add social-media-images
+
+          git commit -m "Add generated social media images ${RUN_ID}" || true
+
+          git push origin media
+
+          cd ../social-media-automation
+
+          python3 <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+
+          repository = os.environ["REPOSITORY"]
+          run_id = os.environ["RUN_ID"]
+
+          data = json.load(
+              open(
+                  "post_data.json",
+                  encoding="utf-8"
+              )
+          )
+
+          date_folder = __import__(
+              "datetime"
+          ).datetime.utcnow().strftime("%Y-%m-%d")
+
+          public_urls = []
+
+          for image_file in data["image_files"]:
+
+              filename = Path(image_file).name
+
+              url = (
+                  f"https://raw.githubusercontent.com/"
+                  f"{repository}/media/"
+                  f"social-media-images/"
+                  f"{date_folder}/"
+                  f"{run_id}/"
+                  f"{filename}"
+              )
+
+              public_urls.append(url)
+
+
+          data["image_urls"] = public_urls
+
+
+          with open(
+              "post_data.json",
+              "w",
+              encoding="utf-8"
+          ) as file:
+
+              json.dump(
+                  data,
+                  file,
+                  ensure_ascii=False,
+                  indent=2
+              )
+
+
+          print("PUBLIC IMAGE URLS:")
+
+          for url in public_urls:
+              print(url)
+          PYTHON
+
+
+      - name: Publish posts to Buffer
+        run: |
+          python3 <<'PYTHON'
+          import os
+          import json
+          import urllib.request
+          import urllib.error
+
+          buffer_token = os.environ["BUFFER_API_TOKEN"]
+
+          channels = {
+              "Facebook": os.environ["FACEBOOK_CHANNEL_ID"],
+              "Instagram": os.environ["INSTAGRAM_CHANNEL_ID"],
+              "LinkedIn": os.environ["LINKEDIN_CHANNEL_ID"]
+          }
+
+
+          with open(
+              "post_data.json",
+              encoding="utf-8"
+          ) as file:
+
+              post_data = json.load(file)
+
+
+          image_urls = post_data["image_urls"]
+
+
+          def create_buffer_post(
+              channel_name,
+              channel_id,
+              text,
+              is_instagram=False
+          ):
+
+              assets = [
+                  {
+                      "image": {
+                          "url": image_url
+                      }
+                  }
+                  for image_url in image_urls
+              ]
+
+
+              input_data = {
+                  "text": text,
+                  "channelId": channel_id,
+                  "schedulingType": "automatic",
+                  "mode": "addToQueue",
+                  "assets": assets,
+                  "aiAssisted": True
+              }
+
+
+              if is_instagram:
+
+                  input_data["metadata"] = {
+                      "instagram": {
+                          "type": "post",
+                          "shouldShareToFeed": True,
+                          "isAiGenerated": True
+                      }
+                  }
+
+
+              query = """
+              mutation CreatePost($input: CreatePostInput!) {
+                createPost(input: $input) {
+                  ... on PostActionSuccess {
+                    post {
+                      id
+                      text
+                      dueAt
+                      status
+                      assets {
+                        id
+                        mimeType
+                      }
+                    }
+                  }
+                  ... on MutationError {
+                    message
+                  }
+                }
+              }
+              """
+
+
+              payload = {
+                  "query": query,
+                  "variables": {
+                      "input": input_data
+                  }
+              }
+
+
+              request = urllib.request.Request(
+                  "https://api.buffer.com",
+                  data=json.dumps(payload).encode("utf-8"),
+                  headers={
+                      "Authorization":
+                          f"Bearer {buffer_token}",
+
+                      "Content-Type":
+                          "application/json"
+                  },
+                  method="POST"
+              )
+
+
+              try:
+
+                  with urllib.request.urlopen(
+                      request,
+                      timeout=120
+                  ) as response:
+
+                      result = json.loads(
+                          response.read().decode("utf-8")
+                      )
+
+
+              except urllib.error.HTTPError as error:
+
+                  body = error.read().decode(
+                      "utf-8",
+                      errors="replace"
+                  )
+
+                  raise RuntimeError(
+                      f"{channel_name} Buffer HTTP "
+                      f"error {error.code}: {body}"
+                  )
+
+
+              print("")
+              print("=" * 60)
+              print(f"BUFFER RESPONSE: {channel_name}")
+              print("=" * 60)
+
+              print(
+                  json.dumps(
+                      result,
+                      ensure_ascii=False,
+                      indent=2
+                  )
+              )
+
+
+              if result.get("errors"):
+
+                  raise RuntimeError(
+                      f"Buffer GraphQL error for "
+                      f"{channel_name}: "
+                      f"{result['errors']}"
+                  )
+
+
+              create_post = (
+                  result
+                  .get("data", {})
+                  .get("createPost")
+              )
+
+
+              if not create_post:
+
+                  raise RuntimeError(
+                      f"No createPost response for "
+                      f"{channel_name}: {result}"
+                  )
+
+
+              if create_post.get("message"):
+
+                  raise RuntimeError(
+                      f"Buffer rejected the "
+                      f"{channel_name} post: "
+                      f"{create_post['message']}"
+                  )
+
+
+              post = create_post.get("post")
+
+
+              if not post:
+
+                  raise RuntimeError(
+                      f"Buffer did not return a "
+                      f"created post for {channel_name}: "
+                      f"{result}"
+                  )
+
+
+              print("")
+              print(
+                  f"SUCCESS: {channel_name} "
+                  f"POST CREATED"
+              )
+
+              print(
+                  f"POST ID: {post.get('id')}"
+              )
+
+              print(
+                  f"DUE AT: {post.get('dueAt')}"
+              )
+
+              print(
+                  f"STATUS: {post.get('status')}"
+              )
+
+
+          print("Publishing Facebook post...")
+
+          create_buffer_post(
+              "Facebook",
+              channels["Facebook"],
+              post_data["instagram_facebook_text"]
+          )
+
+
+          print("Publishing Instagram post...")
+
+          create_buffer_post(
+              "Instagram",
+              channels["Instagram"],
+              post_data["instagram_facebook_text"],
+              is_instagram=True
+          )
+
+
+          print("Publishing LinkedIn post...")
+
+          create_buffer_post(
+              "LinkedIn",
+              channels["LinkedIn"],
+              post_data["linkedin_text"]
+          )
+
+
+          print("")
+          print("=" * 60)
+          print("ALL BUFFER POSTS WERE CREATED SUCCESSFULLY")
+          print("=" * 60)
+          PYTHON
+
+
+      - name: Show final generated data
+        if: always()
+        run: |
+          echo "========================================"
+          echo "FINAL POST DATA"
+          echo "========================================"
           cat post_data.json
 
+
       - name: Upload content and images
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: daily-social-media-content

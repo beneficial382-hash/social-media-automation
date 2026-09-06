@@ -1,4 +1,4 @@
-name: Test OpenAI Astra API
+name: Test Gemini 3.8 Flash API
 
 on:
   workflow_dispatch:
@@ -7,38 +7,35 @@ permissions:
   contents: read
 
 jobs:
-  test-openai:
+  test-gemini:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Call OpenAI GPT-6 Astra
+      - name: Test Gemini API
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           set -euo pipefail
 
-          if [ -z "${OPENAI_API_KEY:-}" ]; then
-            echo "ERROR: OPENAI_API_KEY is not configured."
+          if [ -z "${GEMINI_API_KEY:-}" ]; then
+            echo "ERROR: GEMINI_API_KEY is not configured."
             exit 1
           fi
 
-          echo "Calling OpenAI GPT-6 Astra..."
+          echo "Calling Gemini 3.8 Flash..."
 
           RESPONSE=$(curl --fail-with-body -sS \
             -X POST \
-            "https://api.openai.com/v1/responses" \
-            -H "Authorization: Bearer ${OPENAI_API_KEY}" \
+            "https://generativelanguage.googleapis.com/v1beta/interactions" \
+            -H "x-goog-api-key: ${GEMINI_API_KEY}" \
             -H "Content-Type: application/json" \
             -d '{
-              "model": "gpt-6-astra",
-              "reasoning": {
-                "effort": "low"
-              },
-              "input": "Write one short, original, realistic motivational message about real life. Return only the message."
+              "model": "gemini-3.8-flash",
+              "input": "Write one short, original, realistic and powerful motivational message about real life. Return only the message."
             }')
 
           echo ""
-          echo "========== OPENAI RESPONSE =========="
+          echo "========== GEMINI RESPONSE =========="
           echo "$RESPONSE"
           echo "====================================="
 
@@ -49,24 +46,24 @@ jobs:
           response = json.load(sys.stdin)
 
           if response.get("error"):
-              print("OpenAI returned an error:")
+              print("Gemini returned an error:")
               print(json.dumps(response["error"], indent=2))
               sys.exit(1)
 
-          text = response.get("output_text")
+          text = None
 
-          if not text:
-              for item in response.get("output", []):
-                  if item.get("type") == "message":
-                      for part in item.get("content", []):
-                          if part.get("type") == "output_text":
-                              text = part.get("text")
-                              break
-                  if text:
-                      break
+          for step in response.get("steps", []):
+              for content in step.get("content", []):
+                  if content.get("type") == "text":
+                      text = content.get("text")
+                      if text:
+                          break
+              if text:
+                  break
 
           if not text:
               print("ERROR: No text was returned.")
+              print(json.dumps(response, indent=2))
               sys.exit(1)
 
           print("")
@@ -74,5 +71,5 @@ jobs:
           print(text)
           print("========================================")
           print("")
-          print("SUCCESS: OpenAI GPT-6 Astra API is working.")
+          print("SUCCESS: Gemini 3.8 Flash API is working.")
           '

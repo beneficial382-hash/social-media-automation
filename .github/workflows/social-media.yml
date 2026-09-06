@@ -1,4 +1,4 @@
-name: Fazl Ullah Azaad - Gemini Social Media Automation
+name: Fazl Ullah Azaad - Daily Social Media Automation
 
 on:
   schedule:
@@ -6,11 +6,6 @@ on:
     - cron: "0 3 * * *"
 
   workflow_dispatch:
-    inputs:
-      image_count:
-        description: "Number of images to generate (1-4)"
-        required: false
-        default: "1"
 
 permissions:
   contents: read
@@ -21,52 +16,75 @@ jobs:
 
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      IMAGE_COUNT: ${{ github.event.inputs.image_count || '1' }}
+      POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Generate content and images
+      - name: Generate social media content and image
         run: |
           python3 <<'PYTHON'
           import os
           import json
-          import base64
           import time
           import random
           import urllib.request
           import urllib.error
+          import urllib.parse
           from pathlib import Path
 
 
           # ========================================
-          # CONFIGURATION
+          # API KEYS
           # ========================================
 
-          GEMINI_API_KEY = os.environ["GEMINI_API_KEY"].strip()
+          GEMINI_API_KEY = os.environ.get(
+              "GEMINI_API_KEY",
+              ""
+          ).strip()
+
+          POLLINATIONS_API_KEY = os.environ.get(
+              "POLLINATIONS_API_KEY",
+              ""
+          ).strip()
+
 
           if not GEMINI_API_KEY:
-              raise RuntimeError("GEMINI_API_KEY is empty.")
+              raise RuntimeError(
+                  "GEMINI_API_KEY is missing."
+              )
 
-          image_count = int(os.environ.get("IMAGE_COUNT", "1"))
-          image_count = max(1, min(4, image_count))
+
+          if not POLLINATIONS_API_KEY:
+              raise RuntimeError(
+                  "POLLINATIONS_API_KEY is missing."
+              )
+
+
+          # ========================================
+          # SETTINGS
+          # ========================================
 
           MAX_RETRIES = 6
-          BASE_DELAY = 2
-          REQUEST_TIMEOUT = 180
+          BASE_DELAY = 3
+          TIMEOUT = 180
 
 
           # ========================================
-          # GEMINI REQUEST WITH INTELLIGENT RETRIES
+          # GEMINI REQUEST
           # ========================================
 
-          def gemini_request(model, payload):
+          def gemini_request(
+              model,
+              payload
+          ):
 
               url = (
                   "https://generativelanguage.googleapis.com/"
                   f"v1/models/{model}:generateContent"
               )
+
 
               retryable_codes = {
                   408,
@@ -77,9 +95,13 @@ jobs:
                   504
               }
 
+
               last_error = None
 
-              for attempt in range(MAX_RETRIES):
+
+              for attempt in range(
+                  MAX_RETRIES
+              ):
 
                   request = urllib.request.Request(
                       url,
@@ -87,26 +109,28 @@ jobs:
                           payload
                       ).encode("utf-8"),
                       headers={
-                          "x-goog-api-key": GEMINI_API_KEY,
-                          "Content-Type": "application/json"
+                          "x-goog-api-key":
+                              GEMINI_API_KEY,
+
+                          "Content-Type":
+                              "application/json"
                       },
                       method="POST"
                   )
+
 
                   try:
 
                       with urllib.request.urlopen(
                           request,
-                          timeout=REQUEST_TIMEOUT
+                          timeout=TIMEOUT
                       ) as response:
 
-                          result = json.loads(
+                          return json.loads(
                               response.read().decode(
                                   "utf-8"
                               )
                           )
-
-                          return result
 
 
                   except urllib.error.HTTPError as error:
@@ -116,44 +140,54 @@ jobs:
                           errors="replace"
                       )
 
+
                       last_error = (
                           f"HTTP {error.code}: {body}"
                       )
 
-                      if error.code not in retryable_codes:
+
+                      if (
+                          error.code
+                          not in retryable_codes
+                      ):
 
                           raise RuntimeError(
-                              f"Gemini request failed: "
+                              "Gemini request failed: "
                               f"{last_error}"
                           )
 
-                      if attempt == MAX_RETRIES - 1:
+
+                      if (
+                          attempt
+                          == MAX_RETRIES - 1
+                      ):
 
                           break
 
 
-                      # Exponential backoff:
-                      # 2, 4, 8, 16, 32...
                       delay = (
                           BASE_DELAY *
                           (2 ** attempt)
                       )
 
-                      # Add random jitter
                       delay += random.uniform(
                           0,
                           2
                       )
 
+
                       print(
-                          f"Gemini temporarily unavailable "
+                          f"Gemini temporarily "
+                          f"unavailable "
                           f"({error.code})."
                       )
 
+
                       print(
-                          f"Retrying in {delay:.1f} "
-                          f"seconds..."
+                          f"Retrying in "
+                          f"{delay:.1f} seconds..."
                       )
+
 
                       time.sleep(delay)
 
@@ -163,58 +197,72 @@ jobs:
                       TimeoutError
                   ) as error:
 
+
                       last_error = str(error)
 
-                      if attempt == MAX_RETRIES - 1:
+
+                      if (
+                          attempt
+                          == MAX_RETRIES - 1
+                      ):
 
                           break
+
 
                       delay = (
                           BASE_DELAY *
                           (2 ** attempt)
                       )
 
+
                       delay += random.uniform(
                           0,
                           2
                       )
 
+
                       print(
                           "Temporary network error."
                       )
 
+
                       print(
-                          f"Retrying in {delay:.1f} "
-                          f"seconds..."
+                          f"Retrying in "
+                          f"{delay:.1f} seconds..."
                       )
+
 
                       time.sleep(delay)
 
 
               raise RuntimeError(
-                  f"Gemini request failed after "
-                  f"{MAX_RETRIES} attempts. "
+                  "Gemini failed after "
+                  f"{MAX_RETRIES} attempts.\n"
                   f"Last error: {last_error}"
               )
 
 
           # ========================================
-          # EXTRACT TEXT
+          # EXTRACT GEMINI TEXT
           # ========================================
 
-          def extract_text(response):
+          def extract_text(
+              response
+          ):
 
               candidates = response.get(
                   "candidates",
                   []
               )
 
+
               if not candidates:
 
                   raise RuntimeError(
-                      "No Gemini candidates returned: "
+                      "Gemini returned no candidates: "
                       f"{response}"
                   )
+
 
               parts = (
                   candidates[0]
@@ -222,7 +270,9 @@ jobs:
                   .get("parts", [])
               )
 
+
               text_parts = []
+
 
               for part in parts:
 
@@ -232,12 +282,14 @@ jobs:
                           part["text"]
                       )
 
+
               if not text_parts:
 
                   raise RuntimeError(
-                      "No text found in Gemini response: "
+                      "Gemini returned no text: "
                       f"{response}"
                   )
+
 
               return "\n".join(
                   text_parts
@@ -245,118 +297,156 @@ jobs:
 
 
           # ========================================
-          # START CONTENT GENERATION
+          # GENERATE CONTENT
           # ========================================
 
           print("")
-          print("========================================")
-          print("GENERATING SOCIAL MEDIA CONTENT")
-          print("========================================")
+          print(
+              "========================================"
+          )
+
+          print(
+              "GENERATING SOCIAL MEDIA CONTENT"
+          )
+
+          print(
+              "========================================"
+          )
+
           print("")
 
-          content_prompt = f"""
-          Create ONE completely original, realistic,
-          intelligent, meaningful and powerful
-          social-media post for the personal brand of
+
+          prompt = """
+          Create ONE completely original,
+          powerful, realistic, intelligent
+          and meaningful social-media post
+          for the personal brand of
           Fazl Ullah Azaad.
 
-          This content is NOT for AELAMA.
+          IMPORTANT:
+          This is NOT content for AELAMA.
 
-          The topic should naturally relate to real life.
+          Create content about real life.
+
           Possible themes include:
 
-          - personal growth
-          - resilience
-          - discipline
-          - consistency
-          - self-respect
-          - overcoming difficulties
-          - career development
-          - learning
-          - leadership
-          - realistic success
-          - meaningful human experiences
+          - Personal growth
+          - Discipline
+          - Resilience
+          - Self-respect
+          - Consistency
+          - Career growth
+          - Learning
+          - Leadership
+          - Overcoming difficulties
+          - Meaningful success
+          - Human experiences
 
-          Requirements:
+          REQUIREMENTS:
 
-          - Completely original content.
+          - Completely original.
           - Do not invent quotations.
-          - Do not attribute quotes to famous people.
-          - Do not make unsupported factual claims.
-          - Avoid generic motivational clichés.
-          - Make the writing realistic and emotionally intelligent.
-          - Make it meaningful and thought-provoking.
-          - Suitable for Facebook, Instagram and LinkedIn.
-          - Write one strong caption.
-          - Write one engaging description.
-          - Provide relevant SEO keywords.
-          - Provide natural Facebook and Instagram hashtags.
-          - Provide professional LinkedIn hashtags.
-          - Create exactly {image_count} different image prompts.
-          - Every image prompt must visually match the post.
-          - Images should be photorealistic and cinematic.
-          - Images should be professional and visually powerful.
-          - Absolutely no text, words, letters, logos
-            or watermarks inside the images.
-          - Images should use vertical 9:16 composition.
+          - Do not attribute quotations
+            to famous people.
+          - Do not make unsupported
+            factual claims.
+          - Avoid generic motivational
+            clichés.
+          - Make the content realistic,
+            emotionally intelligent and
+            thought-provoking.
+          - Suitable for Facebook,
+            Instagram and LinkedIn.
+          - Write a strong caption.
+          - Write an engaging description.
+          - Provide SEO keywords.
+          - Provide natural Facebook and
+            Instagram hashtags.
+          - Provide professional LinkedIn
+            hashtags.
+          - Create ONE detailed image prompt.
+          - The image must visually match
+            the social-media post.
+          - Image should be photorealistic,
+            cinematic and powerful.
+          - Vertical 9:16 composition.
+          - Absolutely no text.
+          - No words.
+          - No letters.
+          - No logos.
+          - No watermarks.
 
           Return ONLY valid JSON.
 
           Use exactly this structure:
 
-          {{
+          {
             "caption": "string",
+
             "description": "string",
+
             "seo_keywords": [
               "keyword"
             ],
+
             "facebook_instagram_hashtags": [
               "#hashtag"
             ],
+
             "linkedin_hashtags": [
               "#hashtag"
             ],
-            "image_prompts": [
-              "detailed image prompt"
-            ]
-          }}
+
+            "image_prompt": "string"
+          }
           """
 
 
-          content_payload = {
+          payload = {
               "contents": [
                   {
                       "role": "user",
+
                       "parts": [
                           {
-                              "text": content_prompt
+                              "text": prompt
                           }
                       ]
                   }
               ],
+
               "generationConfig": {
-                  "responseMimeType": "application/json",
-                  "temperature": 0.8,
-                  "maxOutputTokens": 4000
+                  "responseMimeType":
+                      "application/json",
+
+                  "temperature":
+                      0.8,
+
+                  "maxOutputTokens":
+                      4000
               }
           }
 
 
-          content_response = gemini_request(
+          # IMPORTANT:
+          # Change this only if your working
+          # Gemini model has a different name.
+
+          response = gemini_request(
               "gemini-3.8-flash",
-              content_payload
+              payload
           )
 
-          print("Gemini content response received.")
+
+          print(
+              "Gemini content response received."
+          )
+
 
           raw_content = extract_text(
-              content_response
+              response
           )
 
-
-          # ========================================
-          # PARSE JSON
-          # ========================================
 
           try:
 
@@ -364,11 +454,12 @@ jobs:
                   raw_content
               )
 
+
           except json.JSONDecodeError as error:
 
               raise RuntimeError(
                   "Gemini returned invalid JSON.\n\n"
-                  f"Response:\n{raw_content}\n\n"
+                  f"{raw_content}\n\n"
                   f"Error: {error}"
               )
 
@@ -379,8 +470,9 @@ jobs:
               "seo_keywords",
               "facebook_instagram_hashtags",
               "linkedin_hashtags",
-              "image_prompts"
+              "image_prompt"
           ]
+
 
           missing = [
               field
@@ -388,25 +480,14 @@ jobs:
               if not generated.get(field)
           ]
 
+
           if missing:
 
               raise RuntimeError(
-                  f"Missing required fields: "
+                  "Generated content is missing: "
                   f"{missing}"
               )
 
-
-          image_prompts = (
-              generated["image_prompts"]
-              [:image_count]
-          )
-
-          if len(image_prompts) < image_count:
-
-              raise RuntimeError(
-                  "Not enough image prompts "
-                  "were generated."
-              )
 
           print(
               "Content generated successfully."
@@ -414,202 +495,8 @@ jobs:
 
 
           # ========================================
-          # IMAGE GENERATION
+          # PREPARE FINAL POST TEXT
           # ========================================
-
-          print("")
-          print("========================================")
-          print("GENERATING IMAGES")
-          print("========================================")
-          print("")
-
-          output_dir = Path(
-              "generated_images"
-          )
-
-          output_dir.mkdir(
-              exist_ok=True
-          )
-
-          image_files = []
-
-
-          for index, image_prompt in enumerate(
-              image_prompts,
-              start=1
-          ):
-
-              print(
-                  f"Generating image "
-                  f"{index}/{image_count}..."
-              )
-
-
-              final_prompt = f"""
-              {image_prompt}
-
-              Create a photorealistic,
-              cinematic and visually powerful
-              professional social-media image.
-
-              Vertical 9:16 composition.
-
-              Absolutely NO text.
-              NO words.
-              NO letters.
-              NO typography.
-              NO logos.
-              NO watermarks.
-              """
-
-
-              image_payload = {
-                  "contents": [
-                      {
-                          "role": "user",
-                          "parts": [
-                              {
-                                  "text":
-                                  final_prompt
-                              }
-                          ]
-                      }
-                  ],
-                  "generationConfig": {
-                      "responseModalities": [
-                          "TEXT",
-                          "IMAGE"
-                      ]
-                  }
-              }
-
-
-              image_response = gemini_request(
-                  "gemini-3.1-flash-image",
-                  image_payload
-              )
-
-
-              candidates = (
-                  image_response.get(
-                      "candidates",
-                      []
-                  )
-              )
-
-              if not candidates:
-
-                  raise RuntimeError(
-                      f"No image candidate "
-                      f"returned for image "
-                      f"{index}: "
-                      f"{image_response}"
-                  )
-
-
-              parts = (
-                  candidates[0]
-                  .get("content", {})
-                  .get("parts", [])
-              )
-
-              image_data = None
-              mime_type = "image/png"
-
-
-              for part in parts:
-
-                  inline_data = (
-                      part.get("inlineData")
-                      or part.get(
-                          "inline_data"
-                      )
-                  )
-
-                  if inline_data:
-
-                      image_data = (
-                          inline_data.get(
-                              "data"
-                          )
-                      )
-
-                      mime_type = (
-                          inline_data.get(
-                              "mimeType",
-                              inline_data.get(
-                                  "mime_type",
-                                  "image/png"
-                              )
-                          )
-                      )
-
-                      if image_data:
-
-                          break
-
-
-              if not image_data:
-
-                  raise RuntimeError(
-                      f"No image data returned "
-                      f"for image {index}: "
-                      f"{image_response}"
-                  )
-
-
-              extension = "png"
-
-              if "jpeg" in mime_type.lower():
-
-                  extension = "jpg"
-
-              elif "webp" in mime_type.lower():
-
-                  extension = "webp"
-
-
-              image_path = (
-                  output_dir /
-                  f"image_{index}.{extension}"
-              )
-
-
-              with open(
-                  image_path,
-                  "wb"
-              ) as file:
-
-                  file.write(
-                      base64.b64decode(
-                          image_data
-                      )
-                  )
-
-
-              image_files.append(
-                  str(image_path)
-              )
-
-              print(
-                  f"Image {index} completed."
-              )
-
-
-          print("")
-          print(
-              "All images generated successfully."
-          )
-
-
-          # ========================================
-          # CREATE FINAL SOCIAL MEDIA TEXT
-          # ========================================
-
-          seo_keywords = ", ".join(
-              generated["seo_keywords"]
-          )
-
 
           facebook_instagram_text = (
               f"{generated['caption']}\n\n"
@@ -626,7 +513,226 @@ jobs:
 
 
           # ========================================
-          # SAVE EVERYTHING
+          # GENERATE IMAGE WITH POLLINATIONS
+          # ========================================
+
+          print("")
+
+          print(
+              "========================================"
+          )
+
+          print(
+              "GENERATING IMAGE WITH POLLINATIONS"
+          )
+
+          print(
+              "========================================"
+          )
+
+          print("")
+
+
+          final_image_prompt = (
+              generated["image_prompt"]
+              + ". "
+              + "Photorealistic, cinematic, "
+              + "professional social media "
+              + "photography, visually powerful, "
+              + "vertical 9:16 composition. "
+              + "Absolutely no text, no words, "
+              + "no letters, no typography, "
+              + "no logos and no watermarks."
+          )
+
+
+          encoded_prompt = urllib.parse.quote(
+              final_image_prompt,
+              safe=""
+          )
+
+
+          image_url = (
+              "https://gen.pollinations.ai/image/"
+              f"{encoded_prompt}"
+              "?model=flux"
+          )
+
+
+          output_dir = Path(
+              "generated_images"
+          )
+
+          output_dir.mkdir(
+              exist_ok=True
+          )
+
+
+          image_path = (
+              output_dir /
+              "daily_image.jpg"
+          )
+
+
+          pollinations_request = (
+              urllib.request.Request(
+                  image_url,
+
+                  headers={
+                      "Authorization":
+                          "Bearer "
+                          + POLLINATIONS_API_KEY,
+
+                      "User-Agent":
+                          "Fazl-Ullah-Azaad-"
+                          "Social-Media-Automation/1.0"
+                  },
+
+                  method="GET"
+              )
+          )
+
+
+          last_error = None
+
+
+          for attempt in range(
+              MAX_RETRIES
+          ):
+
+              try:
+
+                  print(
+                      "Generating daily image..."
+                  )
+
+
+                  with urllib.request.urlopen(
+                      pollinations_request,
+                      timeout=TIMEOUT
+                  ) as response:
+
+                      image_data = response.read()
+
+
+                  if not image_data:
+
+                      raise RuntimeError(
+                          "Pollinations returned "
+                          "an empty image."
+                      )
+
+
+                  with open(
+                      image_path,
+                      "wb"
+                  ) as file:
+
+                      file.write(
+                          image_data
+                      )
+
+
+                  print(
+                      "Image generated successfully."
+                  )
+
+
+                  break
+
+
+              except urllib.error.HTTPError as error:
+
+                  body = error.read().decode(
+                      "utf-8",
+                      errors="replace"
+                  )
+
+
+                  last_error = (
+                      f"HTTP {error.code}: {body}"
+                  )
+
+
+                  if (
+                      attempt
+                      == MAX_RETRIES - 1
+                  ):
+
+                      raise RuntimeError(
+                          "Pollinations image generation "
+                          "failed.\n"
+                          f"Last error: {last_error}"
+                      )
+
+
+                  delay = (
+                      BASE_DELAY *
+                      (2 ** attempt)
+                  )
+
+
+                  delay += random.uniform(
+                      0,
+                      2
+                  )
+
+
+                  print(
+                      "Pollinations temporarily "
+                      "unavailable."
+                  )
+
+
+                  print(
+                      f"Retrying in "
+                      f"{delay:.1f} seconds..."
+                  )
+
+
+                  time.sleep(delay)
+
+
+              except Exception as error:
+
+                  last_error = str(error)
+
+
+                  if (
+                      attempt
+                      == MAX_RETRIES - 1
+                  ):
+
+                      raise RuntimeError(
+                          "Pollinations image generation "
+                          "failed.\n"
+                          f"Last error: {last_error}"
+                      )
+
+
+                  delay = (
+                      BASE_DELAY *
+                      (2 ** attempt)
+                  )
+
+
+                  print(
+                      "Temporary image-generation "
+                      "error."
+                  )
+
+
+                  print(
+                      f"Retrying in "
+                      f"{delay:.1f} seconds..."
+                  )
+
+
+                  time.sleep(delay)
+
+
+          # ========================================
+          # CREATE FINAL OUTPUT
           # ========================================
 
           final_output = {
@@ -653,8 +759,10 @@ jobs:
                       "linkedin_hashtags"
                   ],
 
-              "image_prompts":
-                  image_prompts,
+              "image_prompt":
+                  generated[
+                      "image_prompt"
+                  ],
 
               "facebook_instagram_text":
                   facebook_instagram_text,
@@ -662,8 +770,8 @@ jobs:
               "linkedin_text":
                   linkedin_text,
 
-              "image_files":
-                  image_files
+              "image_file":
+                  str(image_path)
           }
 
 
@@ -682,13 +790,22 @@ jobs:
 
 
           # ========================================
-          # SHOW RESULT
+          # SHOW RESULTS
           # ========================================
 
           print("")
-          print("========================================")
-          print("SOCIAL MEDIA CONTENT GENERATED")
-          print("========================================")
+          print(
+              "========================================"
+          )
+
+          print(
+              "SUCCESS - DAILY CONTENT READY"
+          )
+
+          print(
+              "========================================"
+          )
+
           print("")
 
           print("CAPTION:")
@@ -697,16 +814,23 @@ jobs:
           )
 
           print("")
+
           print("DESCRIPTION:")
           print(
               generated["description"]
           )
 
           print("")
+
           print("SEO KEYWORDS:")
-          print(seo_keywords)
+          print(
+              ", ".join(
+                  generated["seo_keywords"]
+              )
+          )
 
           print("")
+
           print(
               "FACEBOOK / INSTAGRAM HASHTAGS:"
           )
@@ -720,7 +844,10 @@ jobs:
           )
 
           print("")
-          print("LINKEDIN HASHTAGS:")
+
+          print(
+              "LINKEDIN HASHTAGS:"
+          )
 
           print(
               " ".join(
@@ -731,21 +858,26 @@ jobs:
           )
 
           print("")
-          print("GENERATED IMAGES:")
 
-          for image in image_files:
-
-              print(image)
+          print("IMAGE:")
+          print(
+              str(image_path)
+          )
 
           print("")
-          print("SUCCESS!")
+          print(
+              "POST, SEO AND IMAGE ARE READY."
+          )
+
           PYTHON
+
 
       - name: Show generated post data
         run: |
           cat post_data.json
 
-      - name: Upload post and images
+
+      - name: Upload post and image
         uses: actions/upload-artifact@v4
         with:
           name: daily-social-media-content

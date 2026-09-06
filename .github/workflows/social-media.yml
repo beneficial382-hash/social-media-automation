@@ -1,75 +1,517 @@
-name: Test Gemini 3.8 Flash API
+name: Fazl Ullah Azaad - Gemini Social Media Automation
 
 on:
+  schedule:
+    # 08:00 AM Pakistan Standard Time = 03:00 UTC
+    - cron: "0 3 * * *"
+
   workflow_dispatch:
+    inputs:
+      image_count:
+        description: "Number of images to generate (1-4)"
+        required: false
+        default: "1"
 
 permissions:
   contents: read
 
 jobs:
-  test-gemini:
+  generate:
     runs-on: ubuntu-latest
 
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      IMAGE_COUNT: ${{ github.event.inputs.image_count || '1' }}
+
     steps:
-      - name: Test Gemini API
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate social media content and images
         run: |
-          set -euo pipefail
-
-          if [ -z "${GEMINI_API_KEY:-}" ]; then
-            echo "ERROR: GEMINI_API_KEY is not configured."
-            exit 1
-          fi
-
-          echo "Calling Gemini 3.8 Flash..."
-
-          RESPONSE=$(curl --fail-with-body -sS \
-            -X POST \
-            "https://generativelanguage.googleapis.com/v1beta/interactions" \
-            -H "x-goog-api-key: ${GEMINI_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "model": "gemini-3.8-flash",
-              "input": "Write one short, original, realistic and powerful motivational message about real life. Return only the message."
-            }')
-
-          echo ""
-          echo "========== GEMINI RESPONSE =========="
-          echo "$RESPONSE"
-          echo "====================================="
-
-          echo "$RESPONSE" | python3 -c '
+          python3 <<'PYTHON'
+          import os
           import json
-          import sys
+          import base64
+          import urllib.request
+          import urllib.error
+          from pathlib import Path
 
-          response = json.load(sys.stdin)
 
-          if response.get("error"):
-              print("Gemini returned an error:")
-              print(json.dumps(response["error"], indent=2))
-              sys.exit(1)
+          GEMINI_API_KEY = os.environ["GEMINI_API_KEY"].strip()
 
-          text = None
+          image_count = int(os.environ.get("IMAGE_COUNT", "1"))
+          image_count = max(1, min(4, image_count))
 
-          for step in response.get("steps", []):
-              for content in step.get("content", []):
-                  if content.get("type") == "text":
-                      text = content.get("text")
-                      if text:
+
+          def gemini_request(model, payload):
+
+              url = (
+                  "https://generativelanguage.googleapis.com/"
+                  f"v1/models/{model}:generateContent"
+              )
+
+              request = urllib.request.Request(
+                  url,
+                  data=json.dumps(payload).encode("utf-8"),
+                  headers={
+                      "x-goog-api-key": GEMINI_API_KEY,
+                      "Content-Type": "application/json"
+                  },
+                  method="POST"
+              )
+
+              try:
+                  with urllib.request.urlopen(
+                      request,
+                      timeout=180
+                  ) as response:
+
+                      return json.loads(
+                          response.read().decode("utf-8")
+                      )
+
+              except urllib.error.HTTPError as error:
+
+                  body = error.read().decode(
+                      "utf-8",
+                      errors="replace"
+                  )
+
+                  raise RuntimeError(
+                      f"Gemini HTTP error {error.code}: {body}"
+                  )
+
+
+          def extract_text(response):
+
+              candidates = response.get("candidates", [])
+
+              if not candidates:
+                  raise RuntimeError(
+                      f"No Gemini candidates returned: {response}"
+                  )
+
+              parts = (
+                  candidates[0]
+                  .get("content", {})
+                  .get("parts", [])
+              )
+
+              text_parts = []
+
+              for part in parts:
+
+                  if part.get("text"):
+                      text_parts.append(part["text"])
+
+              if not text_parts:
+                  raise RuntimeError(
+                      f"No text found in Gemini response: {response}"
+                  )
+
+              return "\n".join(text_parts)
+
+
+          print("========================================")
+          print("GENERATING SOCIAL MEDIA CONTENT")
+          print("========================================")
+
+
+          content_prompt = f"""
+          Create ONE completely original, realistic, intelligent,
+          meaningful and powerful social-media post for the personal
+          brand of Fazl Ullah Azaad.
+
+          This content is NOT for AELAMA.
+
+          The topic should naturally relate to real life and may focus
+          on personal growth, resilience, discipline, consistency,
+          self-respect, overcoming difficulties, career development,
+          learning, leadership, realistic success or meaningful
+          human experiences.
+
+          Requirements:
+
+          - Completely original.
+          - No fake or invented quotations.
+          - Do not attribute quotations to famous people.
+          - Do not make unsupported factual claims.
+          - Avoid generic motivational clichés.
+          - Make the writing realistic and emotionally intelligent.
+          - Make it meaningful and thought-provoking.
+          - Suitable for Facebook, Instagram and LinkedIn.
+          - Create a strong caption.
+          - Create an engaging description.
+          - Generate relevant SEO keywords.
+          - Generate natural Facebook and Instagram hashtags.
+          - Generate professional LinkedIn hashtags.
+          - Create exactly {image_count} different image prompts.
+          - Every image prompt must visually match the post.
+          - Images must be photorealistic and cinematic.
+          - Images must be professional and visually powerful.
+          - Absolutely no text, words, letters, logos or watermarks
+            inside the images.
+          - Images should have a vertical 9:16 composition.
+
+          Return ONLY valid JSON.
+
+          Use exactly this structure:
+
+          {{
+            "caption": "string",
+            "description": "string",
+            "seo_keywords": [
+              "keyword"
+            ],
+            "facebook_instagram_hashtags": [
+              "#hashtag"
+            ],
+            "linkedin_hashtags": [
+              "#hashtag"
+            ],
+            "image_prompts": [
+              "detailed image prompt"
+            ]
+          }}
+          """
+
+
+          content_payload = {
+              "contents": [
+                  {
+                      "role": "user",
+                      "parts": [
+                          {
+                              "text": content_prompt
+                          }
+                      ]
+                  }
+              ],
+              "generationConfig": {
+                  "responseMimeType": "application/json",
+                  "temperature": 0.9,
+                  "maxOutputTokens": 4000
+              }
+          }
+
+
+          content_response = gemini_request(
+              "gemini-3.8-flash",
+              content_payload
+          )
+
+
+          raw_content = extract_text(content_response)
+
+
+          try:
+              generated = json.loads(raw_content)
+
+          except json.JSONDecodeError as error:
+
+              raise RuntimeError(
+                  "Gemini did not return valid JSON.\n"
+                  f"Response:\n{raw_content}\n"
+                  f"Error: {error}"
+              )
+
+
+          required_fields = [
+              "caption",
+              "description",
+              "seo_keywords",
+              "facebook_instagram_hashtags",
+              "linkedin_hashtags",
+              "image_prompts"
+          ]
+
+
+          missing = [
+              field
+              for field in required_fields
+              if not generated.get(field)
+          ]
+
+
+          if missing:
+
+              raise RuntimeError(
+                  f"Missing required fields: {missing}"
+              )
+
+
+          image_prompts = generated["image_prompts"][:image_count]
+
+
+          if len(image_prompts) < image_count:
+
+              raise RuntimeError(
+                  "Gemini did not generate enough image prompts."
+              )
+
+
+          print("Content generated successfully.")
+
+
+          output_dir = Path("generated_images")
+          output_dir.mkdir(exist_ok=True)
+
+          image_files = []
+
+
+          for index, image_prompt in enumerate(
+              image_prompts,
+              start=1
+          ):
+
+              print(
+                  f"Generating image {index}/{image_count}..."
+              )
+
+
+              final_prompt = f"""
+              {image_prompt}
+
+              Create a photorealistic, cinematic and visually
+              powerful professional social-media image.
+
+              Vertical 9:16 composition.
+
+              The image must contain absolutely NO text,
+              NO words, NO letters, NO typography,
+              NO logos and NO watermarks.
+              """
+
+
+              image_payload = {
+                  "contents": [
+                      {
+                          "role": "user",
+                          "parts": [
+                              {
+                                  "text": final_prompt
+                              }
+                          ]
+                      }
+                  ],
+                  "generationConfig": {
+                      "responseModalities": [
+                          "TEXT",
+                          "IMAGE"
+                      ]
+                  }
+              }
+
+
+              image_response = gemini_request(
+                  "gemini-3.1-flash-image",
+                  image_payload
+              )
+
+
+              candidates = image_response.get(
+                  "candidates",
+                  []
+              )
+
+
+              if not candidates:
+
+                  raise RuntimeError(
+                      f"No image candidate returned: "
+                      f"{image_response}"
+                  )
+
+
+              parts = (
+                  candidates[0]
+                  .get("content", {})
+                  .get("parts", [])
+              )
+
+
+              image_data = None
+              mime_type = "image/png"
+
+
+              for part in parts:
+
+                  inline_data = (
+                      part.get("inlineData")
+                      or part.get("inline_data")
+                  )
+
+                  if inline_data:
+
+                      image_data = inline_data.get("data")
+
+                      mime_type = inline_data.get(
+                          "mimeType",
+                          inline_data.get(
+                              "mime_type",
+                              "image/png"
+                          )
+                      )
+
+                      if image_data:
                           break
-              if text:
-                  break
 
-          if not text:
-              print("ERROR: No text was returned.")
-              print(json.dumps(response, indent=2))
-              sys.exit(1)
+
+              if not image_data:
+
+                  raise RuntimeError(
+                      f"No image data returned for image {index}: "
+                      f"{image_response}"
+                  )
+
+
+              extension = "png"
+
+              if "jpeg" in mime_type.lower():
+                  extension = "jpg"
+
+              elif "webp" in mime_type.lower():
+                  extension = "webp"
+
+
+              image_path = (
+                  output_dir /
+                  f"image_{index}.{extension}"
+              )
+
+
+              with open(image_path, "wb") as file:
+
+                  file.write(
+                      base64.b64decode(image_data)
+                  )
+
+
+              image_files.append(
+                  str(image_path)
+              )
+
+
+          print("All images generated successfully.")
+
+
+          seo_keywords = ", ".join(
+              generated["seo_keywords"]
+          )
+
+
+          facebook_instagram_text = (
+              f"{generated['caption']}\n\n"
+              f"{generated['description']}\n\n"
+              f"{' '.join(generated['facebook_instagram_hashtags'])}"
+          )
+
+
+          linkedin_text = (
+              f"{generated['caption']}\n\n"
+              f"{generated['description']}\n\n"
+              f"{' '.join(generated['linkedin_hashtags'])}"
+          )
+
+
+          final_output = {
+              "brand": "Fazl Ullah Azaad",
+
+              "caption": generated["caption"],
+
+              "description": generated["description"],
+
+              "seo_keywords":
+                  generated["seo_keywords"],
+
+              "facebook_instagram_hashtags":
+                  generated[
+                      "facebook_instagram_hashtags"
+                  ],
+
+              "linkedin_hashtags":
+                  generated[
+                      "linkedin_hashtags"
+                  ],
+
+              "image_prompts":
+                  image_prompts,
+
+              "facebook_instagram_text":
+                  facebook_instagram_text,
+
+              "linkedin_text":
+                  linkedin_text,
+
+              "image_files":
+                  image_files
+          }
+
+
+          with open(
+              "post_data.json",
+              "w",
+              encoding="utf-8"
+          ) as file:
+
+              json.dump(
+                  final_output,
+                  file,
+                  ensure_ascii=False,
+                  indent=2
+              )
+
 
           print("")
-          print("========== GENERATED MESSAGE ==========")
-          print(text)
+          print("========================================")
+          print("SOCIAL MEDIA CONTENT READY")
           print("========================================")
           print("")
-          print("SUCCESS: Gemini 3.8 Flash API is working.")
-          '
+          print("CAPTION:")
+          print(generated["caption"])
+          print("")
+          print("DESCRIPTION:")
+          print(generated["description"])
+          print("")
+          print("SEO KEYWORDS:")
+          print(seo_keywords)
+          print("")
+          print("FACEBOOK / INSTAGRAM HASHTAGS:")
+          print(
+              " ".join(
+                  generated[
+                      "facebook_instagram_hashtags"
+                  ]
+              )
+          )
+          print("")
+          print("LINKEDIN HASHTAGS:")
+          print(
+              " ".join(
+                  generated[
+                      "linkedin_hashtags"
+                  ]
+              )
+          )
+          print("")
+          print("GENERATED IMAGES:")
+          print(
+              "\n".join(image_files)
+          )
+          print("")
+          print("SUCCESS!")
+          PYTHON
+
+      - name: Show generated post
+        run: |
+          cat post_data.json
+
+      - name: Upload post and images
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-social-media-content
+          path: |
+            post_data.json
+            generated_images/
+          retention-days: 7

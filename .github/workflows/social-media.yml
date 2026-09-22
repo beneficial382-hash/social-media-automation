@@ -2,467 +2,255 @@ name: Fazl Ullah Azaad - Daily Social Media Automation
 
 on:
   schedule:
-    # 08:00 AM Pakistan Standard Time = 03:00 UTC
+    # 08:00 AM Pakistan Standard Time (UTC+5)
     - cron: "0 3 * * *"
 
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  generate:
+  generate-and-publish:
     runs-on: ubuntu-latest
 
     env:
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
 
     steps:
+
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Generate social media content and image
+      # ============================================================
+      # 2. GENERATE POST + IMAGE
+      # ============================================================
+
+      - name: Generate daily content and image
+        shell: bash
         run: |
+          set -euo pipefail
+
           python3 <<'PYTHON'
           import os
           import json
+          import base64
           import time
-          import random
-          import urllib.request
-          import urllib.error
-          import urllib.parse
+          import requests
           from pathlib import Path
 
-
-          # ========================================
-          # API KEYS
-          # ========================================
-
-          GEMINI_API_KEY = os.environ.get(
-              "GEMINI_API_KEY",
-              ""
-          ).strip()
-
-          POLLINATIONS_API_KEY = os.environ.get(
-              "POLLINATIONS_API_KEY",
-              ""
-          ).strip()
-
-
-          if not GEMINI_API_KEY:
-              raise RuntimeError(
-                  "GEMINI_API_KEY is missing."
-              )
-
-
-          if not POLLINATIONS_API_KEY:
-              raise RuntimeError(
-                  "POLLINATIONS_API_KEY is missing."
-              )
-
-
-          # ========================================
-          # SETTINGS
-          # ========================================
-
-          MAX_RETRIES = 6
-          BASE_DELAY = 3
-          TIMEOUT = 180
-
-
-          # ========================================
-          # GEMINI REQUEST
-          # ========================================
-
-          def gemini_request(
-              model,
-              payload
-          ):
-
-              url = (
-                  "https://generativelanguage.googleapis.com/"
-                  f"v1/models/{model}:generateContent"
-              )
-
-
-              retryable_codes = {
-                  408,
-                  429,
-                  500,
-                  502,
-                  503,
-                  504
-              }
-
-
-              last_error = None
-
-
-              for attempt in range(
-                  MAX_RETRIES
-              ):
-
-                  request = urllib.request.Request(
-                      url,
-                      data=json.dumps(
-                          payload
-                      ).encode("utf-8"),
-                      headers={
-                          "x-goog-api-key":
-                              GEMINI_API_KEY,
-
-                          "Content-Type":
-                              "application/json"
-                      },
-                      method="POST"
-                  )
-
-
-                  try:
-
-                      with urllib.request.urlopen(
-                          request,
-                          timeout=TIMEOUT
-                      ) as response:
-
-                          return json.loads(
-                              response.read().decode(
-                                  "utf-8"
-                              )
-                          )
-
-
-                  except urllib.error.HTTPError as error:
-
-                      body = error.read().decode(
-                          "utf-8",
-                          errors="replace"
-                      )
-
-
-                      last_error = (
-                          f"HTTP {error.code}: {body}"
-                      )
-
-
-                      if (
-                          error.code
-                          not in retryable_codes
-                      ):
-
-                          raise RuntimeError(
-                              "Gemini request failed: "
-                              f"{last_error}"
-                          )
-
-
-                      if (
-                          attempt
-                          == MAX_RETRIES - 1
-                      ):
-
-                          break
-
-
-                      delay = (
-                          BASE_DELAY *
-                          (2 ** attempt)
-                      )
-
-                      delay += random.uniform(
-                          0,
-                          2
-                      )
-
-
-                      print(
-                          f"Gemini temporarily "
-                          f"unavailable "
-                          f"({error.code})."
-                      )
-
-
-                      print(
-                          f"Retrying in "
-                          f"{delay:.1f} seconds..."
-                      )
-
-
-                      time.sleep(delay)
-
-
-                  except (
-                      urllib.error.URLError,
-                      TimeoutError
-                  ) as error:
-
-
-                      last_error = str(error)
-
-
-                      if (
-                          attempt
-                          == MAX_RETRIES - 1
-                      ):
-
-                          break
-
-
-                      delay = (
-                          BASE_DELAY *
-                          (2 ** attempt)
-                      )
-
-
-                      delay += random.uniform(
-                          0,
-                          2
-                      )
-
-
-                      print(
-                          "Temporary network error."
-                      )
-
-
-                      print(
-                          f"Retrying in "
-                          f"{delay:.1f} seconds..."
-                      )
-
-
-                      time.sleep(delay)
-
-
-              raise RuntimeError(
-                  "Gemini failed after "
-                  f"{MAX_RETRIES} attempts.\n"
-                  f"Last error: {last_error}"
-              )
-
-
-          # ========================================
-          # EXTRACT GEMINI TEXT
-          # ========================================
-
-          def extract_text(
-              response
-          ):
-
-              candidates = response.get(
-                  "candidates",
-                  []
-              )
-
-
-              if not candidates:
-
-                  raise RuntimeError(
-                      "Gemini returned no candidates: "
-                      f"{response}"
-                  )
-
-
-              parts = (
-                  candidates[0]
-                  .get("content", {})
-                  .get("parts", [])
-              )
-
-
-              text_parts = []
-
-
-              for part in parts:
-
-                  if part.get("text"):
-
-                      text_parts.append(
-                          part["text"]
-                      )
-
-
-              if not text_parts:
-
-                  raise RuntimeError(
-                      "Gemini returned no text: "
-                      f"{response}"
-                  )
-
-
-              return "\n".join(
-                  text_parts
-              )
-
-
-          # ========================================
-          # GENERATE CONTENT
-          # ========================================
-
-          print("")
-          print(
-              "========================================"
-          )
-
-          print(
-              "GENERATING SOCIAL MEDIA CONTENT"
-          )
-
-          print(
-              "========================================"
-          )
-
-          print("")
-
-
-          prompt = """
-          Create ONE completely original,
-          powerful, realistic, intelligent
-          and meaningful social-media post
-          for the personal brand of
-          Fazl Ullah Azaad.
+          OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
+
+          BASE_URL = "https://openrouter.ai/api/v1"
+
+          headers = {
+              "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+              "Content-Type": "application/json",
+              "HTTP-Referer": "https://github.com/",
+              "X-Title": "Fazl Ullah Azaad Daily Social Media Automation",
+          }
+
+          # ------------------------------------------------------------
+          # TEXT MODEL
+          # ------------------------------------------------------------
+          #
+          # OpenRouter's free router automatically selects an available
+          # free model.
+          #
+          TEXT_MODEL = "openrouter/free"
+
+          prompt = r"""
+          Create ONE completely original social-media post for the
+          personal brand of Fazl Ullah Azaad.
 
           IMPORTANT:
-          This is NOT content for AELAMA.
+          This is for Fazl Ullah Azaad's PERSONAL BRAND.
+          It is NOT an AELAMA advertisement.
 
-          Create content about real life.
+          The post must be:
+
+          - Original
+          - Intelligent
+          - Meaningful
+          - Realistic
+          - Emotionally mature
+          - Motivational without being childish
+          - Suitable for Facebook, Instagram and LinkedIn
+          - Based on real human experiences
+          - Useful and thought-provoking
+          - Professional but natural
+          - Written in clear, powerful English
 
           Possible themes include:
 
           - Personal growth
           - Discipline
+          - Consistency
           - Resilience
           - Self-respect
-          - Consistency
-          - Career growth
           - Learning
+          - Career growth
           - Leadership
+          - Failure and recovery
+          - Patience
+          - Responsibility
+          - Hard work
+          - Building yourself
           - Overcoming difficulties
-          - Meaningful success
-          - Human experiences
+          - Realistic success
+          - Human behavior
+          - Life lessons
 
-          REQUIREMENTS:
+          Avoid:
 
-          - Completely original.
-          - Do not invent quotations.
-          - Do not attribute quotations
-            to famous people.
-          - Do not make unsupported
-            factual claims.
-          - Avoid generic motivational
-            clichés.
-          - Make the content realistic,
-            emotionally intelligent and
-            thought-provoking.
-          - Suitable for Facebook,
-            Instagram and LinkedIn.
-          - Write a strong caption.
-          - Write an engaging description.
-          - Provide SEO keywords.
-          - Provide natural Facebook and
-            Instagram hashtags.
-          - Provide professional LinkedIn
-            hashtags.
-          - Create ONE detailed image prompt.
-          - The image must visually match
-            the social-media post.
-          - Image should be photorealistic,
-            cinematic and powerful.
-          - Vertical 9:16 composition.
-          - Absolutely no text.
-          - No words.
-          - No letters.
-          - No logos.
-          - No watermarks.
+          - Generic motivational clichés
+          - Fake quotations
+          - Quotes attributed to famous people
+          - Invented statistics
+          - Unsupported factual claims
+          - Excessive emojis
+          - Overly dramatic language
+          - Fake success stories
+          - AELAMA promotion
+          - Political persuasion
+          - Religious preaching unless directly relevant
+          - Repeating the same idea in different words
 
-          Return ONLY valid JSON.
+          The post should feel like something a thoughtful,
+          experienced person would genuinely publish.
 
-          Use exactly this structure:
+          Create EXACTLY these JSON fields:
 
           {
-            "caption": "string",
-
-            "description": "string",
-
-            "seo_keywords": [
-              "keyword"
-            ],
-
-            "facebook_instagram_hashtags": [
-              "#hashtag"
-            ],
-
-            "linkedin_hashtags": [
-              "#hashtag"
-            ],
-
-            "image_prompt": "string"
+            "caption": "...",
+            "description": "...",
+            "seo_keywords": ["...", "..."],
+            "facebook_instagram_hashtags": ["...", "..."],
+            "linkedin_hashtags": ["...", "..."],
+            "image_prompt": "..."
           }
+
+          Requirements:
+
+          caption:
+          A short powerful opening line or headline.
+
+          description:
+          The complete social-media post.
+
+          seo_keywords:
+          8-12 relevant search-friendly keywords.
+
+          facebook_instagram_hashtags:
+          8-12 natural hashtags.
+
+          linkedin_hashtags:
+          4-8 professional hashtags.
+
+          image_prompt:
+          A detailed prompt for a photorealistic cinematic image
+          representing the meaning of the post.
+
+          Image requirements:
+
+          - Photorealistic
+          - Cinematic
+          - Professional
+          - Realistic human environment
+          - Natural lighting
+          - Vertical 9:16 composition
+          - Strong visual storytelling
+          - No text
+          - No words
+          - No letters
+          - No logos
+          - No watermark
+          - No captions inside the image
+
+          Return ONLY valid JSON.
           """
 
+          def call_openrouter(payload, retries=4):
+              last_error = None
 
-          payload = {
-              "contents": [
-                  {
-                      "role": "user",
+              for attempt in range(retries):
+                  try:
+                      response = requests.post(
+                          f"{BASE_URL}/chat/completions",
+                          headers=headers,
+                          json=payload,
+                          timeout=120
+                      )
 
-                      "parts": [
-                          {
-                              "text": prompt
-                          }
-                      ]
-                  }
-              ],
+                      if response.status_code == 200:
+                          return response.json()
 
-              "generationConfig": {
-                  "responseMimeType":
-                      "application/json",
+                      last_error = (
+                          f"HTTP {response.status_code}: "
+                          f"{response.text[:1000]}"
+                      )
 
-                  "temperature":
-                      0.8,
+                      # Retry temporary errors
+                      if response.status_code in (408, 429, 500, 502, 503, 504):
+                          time.sleep(2 ** attempt)
+                          continue
 
-                  "maxOutputTokens":
-                      4000
-              }
-          }
+                      raise RuntimeError(last_error)
 
+                  except requests.RequestException as e:
+                      last_error = str(e)
 
-          # IMPORTANT:
-          # Change this only if your working
-          # Gemini model has a different name.
+                      if attempt < retries - 1:
+                          time.sleep(2 ** attempt)
+                          continue
 
-          response = gemini_request(
-              "gemini-3.8-flash",
-              payload
-          )
-
-
-          print(
-              "Gemini content response received."
-          )
-
-
-          raw_content = extract_text(
-              response
-          )
-
-
-          try:
-
-              generated = json.loads(
-                  raw_content
-              )
-
-
-          except json.JSONDecodeError as error:
+                      raise
 
               raise RuntimeError(
-                  "Gemini returned invalid JSON.\n\n"
-                  f"{raw_content}\n\n"
-                  f"Error: {error}"
+                  f"OpenRouter failed after {retries} attempts: {last_error}"
               )
 
+          # ------------------------------------------------------------
+          # GENERATE TEXT
+          # ------------------------------------------------------------
+
+          print("Generating today's social-media post...")
+
+          payload = {
+              "model": TEXT_MODEL,
+              "messages": [
+                  {
+                      "role": "user",
+                      "content": prompt
+                  }
+              ],
+              "temperature": 0.9,
+              "max_tokens": 2500
+          }
+
+          result = call_openrouter(payload)
+
+          content = result["choices"][0]["message"]["content"]
+
+          # Remove accidental markdown fences
+          content = content.strip()
+
+          if content.startswith("```"):
+              content = content.replace("```json", "", 1)
+              content = content.replace("```", "", 1)
+              content = content.strip()
+
+          try:
+              post = json.loads(content)
+          except json.JSONDecodeError:
+              print("Model returned:")
+              print(content)
+              raise RuntimeError("OpenRouter did not return valid JSON.")
 
           required_fields = [
               "caption",
@@ -473,411 +261,118 @@ jobs:
               "image_prompt"
           ]
 
+          for field in required_fields:
+              if field not in post:
+                  raise RuntimeError(
+                      f"Missing required field: {field}"
+                  )
 
-          missing = [
-              field
-              for field in required_fields
-              if not generated.get(field)
-          ]
+          # ------------------------------------------------------------
+          # GENERATE IMAGE THROUGH OPENROUTER
+          # ------------------------------------------------------------
 
+          print("Generating today's image through OpenRouter...")
 
-          if missing:
+          image_payload = {
+              # Low-cost image model.
+              # Change this model later if you want another one.
+              "model": "bytedance-seed/seedream-4.5",
 
+              "prompt": post["image_prompt"],
+
+              "aspect_ratio": "9:16",
+
+              "n": 1
+          }
+
+          image_response = requests.post(
+              f"{BASE_URL}/images",
+              headers=headers,
+              json=image_payload,
+              timeout=180
+          )
+
+          if image_response.status_code != 200:
               raise RuntimeError(
-                  "Generated content is missing: "
-                  f"{missing}"
+                  "OpenRouter image generation failed: "
+                  f"HTTP {image_response.status_code}: "
+                  f"{image_response.text[:2000]}"
               )
 
+          image_data = image_response.json()
 
-          print(
-              "Content generated successfully."
-          )
+          if not image_data.get("data"):
+              raise RuntimeError(
+                  "OpenRouter returned no image data."
+              )
 
+          encoded_image = image_data["data"][0].get("b64_json")
 
-          # ========================================
-          # PREPARE FINAL POST TEXT
-          # ========================================
+          if not encoded_image:
+              raise RuntimeError(
+                  "OpenRouter image response did not contain b64_json."
+              )
 
-          facebook_instagram_text = (
-              f"{generated['caption']}\n\n"
-              f"{generated['description']}\n\n"
-              f"{' '.join(generated['facebook_instagram_hashtags'])}"
-          )
+          image_bytes = base64.b64decode(encoded_image)
 
-
-          linkedin_text = (
-              f"{generated['caption']}\n\n"
-              f"{generated['description']}\n\n"
-              f"{' '.join(generated['linkedin_hashtags'])}"
-          )
-
-
-          # ========================================
-          # GENERATE IMAGE WITH POLLINATIONS
-          # ========================================
-
-          print("")
-
-          print(
-              "========================================"
-          )
-
-          print(
-              "GENERATING IMAGE WITH POLLINATIONS"
-          )
-
-          print(
-              "========================================"
-          )
-
-          print("")
-
-
-          final_image_prompt = (
-              generated["image_prompt"]
-              + ". "
-              + "Photorealistic, cinematic, "
-              + "professional social media "
-              + "photography, visually powerful, "
-              + "vertical 9:16 composition. "
-              + "Absolutely no text, no words, "
-              + "no letters, no typography, "
-              + "no logos and no watermarks."
-          )
-
-
-          encoded_prompt = urllib.parse.quote(
-              final_image_prompt,
-              safe=""
-          )
-
-
-          image_url = (
-              "https://gen.pollinations.ai/image/"
-              f"{encoded_prompt}"
-              "?model=flux"
-          )
-
-
-          output_dir = Path(
-              "generated_images"
-          )
-
-          output_dir.mkdir(
+          Path("generated_images").mkdir(
+              parents=True,
               exist_ok=True
           )
 
-
-          image_path = (
-              output_dir /
-              "daily_image.jpg"
+          image_path = Path(
+              "generated_images/daily_image.jpg"
           )
 
+          image_path.write_bytes(image_bytes)
 
-          pollinations_request = (
-              urllib.request.Request(
-                  image_url,
+          # ------------------------------------------------------------
+          # SAVE POST DATA
+          # ------------------------------------------------------------
 
-                  headers={
-                      "Authorization":
-                          "Bearer "
-                          + POLLINATIONS_API_KEY,
+          post["image_file"] = str(image_path)
 
-                      "User-Agent":
-                          "Fazl-Ullah-Azaad-"
-                          "Social-Media-Automation/1.0"
-                  },
-
-                  method="GET"
-              )
-          )
-
-
-          last_error = None
-
-
-          for attempt in range(
-              MAX_RETRIES
-          ):
-
-              try:
-
-                  print(
-                      "Generating daily image..."
-                  )
-
-
-                  with urllib.request.urlopen(
-                      pollinations_request,
-                      timeout=TIMEOUT
-                  ) as response:
-
-                      image_data = response.read()
-
-
-                  if not image_data:
-
-                      raise RuntimeError(
-                          "Pollinations returned "
-                          "an empty image."
-                      )
-
-
-                  with open(
-                      image_path,
-                      "wb"
-                  ) as file:
-
-                      file.write(
-                          image_data
-                      )
-
-
-                  print(
-                      "Image generated successfully."
-                  )
-
-
-                  break
-
-
-              except urllib.error.HTTPError as error:
-
-                  body = error.read().decode(
-                      "utf-8",
-                      errors="replace"
-                  )
-
-
-                  last_error = (
-                      f"HTTP {error.code}: {body}"
-                  )
-
-
-                  if (
-                      attempt
-                      == MAX_RETRIES - 1
-                  ):
-
-                      raise RuntimeError(
-                          "Pollinations image generation "
-                          "failed.\n"
-                          f"Last error: {last_error}"
-                      )
-
-
-                  delay = (
-                      BASE_DELAY *
-                      (2 ** attempt)
-                  )
-
-
-                  delay += random.uniform(
-                      0,
-                      2
-                  )
-
-
-                  print(
-                      "Pollinations temporarily "
-                      "unavailable."
-                  )
-
-
-                  print(
-                      f"Retrying in "
-                      f"{delay:.1f} seconds..."
-                  )
-
-
-                  time.sleep(delay)
-
-
-              except Exception as error:
-
-                  last_error = str(error)
-
-
-                  if (
-                      attempt
-                      == MAX_RETRIES - 1
-                  ):
-
-                      raise RuntimeError(
-                          "Pollinations image generation "
-                          "failed.\n"
-                          f"Last error: {last_error}"
-                      )
-
-
-                  delay = (
-                      BASE_DELAY *
-                      (2 ** attempt)
-                  )
-
-
-                  print(
-                      "Temporary image-generation "
-                      "error."
-                  )
-
-
-                  print(
-                      f"Retrying in "
-                      f"{delay:.1f} seconds..."
-                  )
-
-
-                  time.sleep(delay)
-
-
-          # ========================================
-          # CREATE FINAL OUTPUT
-          # ========================================
-
-          final_output = {
-
-              "brand":
-                  "Fazl Ullah Azaad",
-
-              "caption":
-                  generated["caption"],
-
-              "description":
-                  generated["description"],
-
-              "seo_keywords":
-                  generated["seo_keywords"],
-
-              "facebook_instagram_hashtags":
-                  generated[
-                      "facebook_instagram_hashtags"
-                  ],
-
-              "linkedin_hashtags":
-                  generated[
-                      "linkedin_hashtags"
-                  ],
-
-              "image_prompt":
-                  generated[
-                      "image_prompt"
-                  ],
-
-              "facebook_instagram_text":
-                  facebook_instagram_text,
-
-              "linkedin_text":
-                  linkedin_text,
-
-              "image_file":
-                  str(image_path)
-          }
-
-
-          with open(
-              "post_data.json",
-              "w",
-              encoding="utf-8"
-          ) as file:
-
+          with open("post_data.json", "w", encoding="utf-8") as f:
               json.dump(
-                  final_output,
-                  file,
+                  post,
+                  f,
                   ensure_ascii=False,
                   indent=2
               )
 
-
-          # ========================================
-          # SHOW RESULTS
-          # ========================================
-
           print("")
-          print(
-              "========================================"
-          )
+          print("========================================")
+          print("TODAY'S GENERATED CONTENT")
+          print("========================================")
+          print(json.dumps(
+              post,
+              ensure_ascii=False,
+              indent=2
+          ))
+          print("========================================")
 
           print(
-              "SUCCESS - DAILY CONTENT READY"
-          )
-
-          print(
-              "========================================"
-          )
-
-          print("")
-
-          print("CAPTION:")
-          print(
-              generated["caption"]
-          )
-
-          print("")
-
-          print("DESCRIPTION:")
-          print(
-              generated["description"]
-          )
-
-          print("")
-
-          print("SEO KEYWORDS:")
-          print(
-              ", ".join(
-                  generated["seo_keywords"]
-              )
-          )
-
-          print("")
-
-          print(
-              "FACEBOOK / INSTAGRAM HASHTAGS:"
-          )
-
-          print(
-              " ".join(
-                  generated[
-                      "facebook_instagram_hashtags"
-                  ]
-              )
-          )
-
-          print("")
-
-          print(
-              "LINKEDIN HASHTAGS:"
-          )
-
-          print(
-              " ".join(
-                  generated[
-                      "linkedin_hashtags"
-                  ]
-              )
-          )
-
-          print("")
-
-          print("IMAGE:")
-          print(
-              str(image_path)
-          )
-
-          print("")
-          print(
-              "POST, SEO AND IMAGE ARE READY."
+              f"Image saved to: {image_path}"
           )
 
           PYTHON
 
+      # ============================================================
+      # 3. DISPLAY GENERATED CONTENT
+      # ============================================================
 
-      - name: Show generated post data
+      - name: Show generated post
         run: |
+          echo "=============================="
+          echo "GENERATED POST"
+          echo "=============================="
           cat post_data.json
 
+      # ============================================================
+      # 4. UPLOAD ARTIFACT
+      # ============================================================
 
-      - name: Upload post and image
+      - name: Upload generated content
         uses: actions/upload-artifact@v4
         with:
           name: daily-social-media-content

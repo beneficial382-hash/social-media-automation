@@ -18,11 +18,16 @@ jobs:
   daily-social-media:
     runs-on: ubuntu-latest
 
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     env:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -36,9 +41,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-      - name: Generate and publish daily content
+      # ------------------------------------------------------
+      # 1. Generate post + images
+      # ------------------------------------------------------
+
+      - name: Generate daily content
         run: |
-          python scripts/daily_social_media.py
+          python scripts/daily_social_media.py generate
+
+      # ------------------------------------------------------
+      # 2. Deploy generated images/site to GitHub Pages
+      # ------------------------------------------------------
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
@@ -52,11 +65,31 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-      - name: Upload daily content
+      # ------------------------------------------------------
+      # 3. Publish to Buffer
+      # ------------------------------------------------------
+
+      - name: Publish to Buffer
+        run: |
+          python scripts/daily_social_media.py publish
+
+      # ------------------------------------------------------
+      # 4. Save successful post to permanent history
+      # ------------------------------------------------------
+
+      - name: Finalize content history
+        run: |
+          python scripts/daily_social_media.py finalize
+
+      # ------------------------------------------------------
+      # 5. Save generated files as workflow artifacts
+      # ------------------------------------------------------
+
+      - name: Upload daily content artifacts
         uses: actions/upload-artifact@v4
         with:
           name: daily-social-media-content
           path: |
             post_data.json
-            image_urls.json
+            content_history.json
           retention-days: 14

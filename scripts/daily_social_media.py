@@ -652,10 +652,10 @@ Accept it only when the central insight is genuinely distinct.
 
 Return ONLY:
 
-{
+{{
   "original": true,
   "reason": "short reason"
-}
+}}
 """
 
     raw = openrouter_chat(

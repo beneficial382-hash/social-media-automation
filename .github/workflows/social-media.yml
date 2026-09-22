@@ -27,7 +27,6 @@ jobs:
       BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -41,22 +40,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-      # ------------------------------------------------------
-      # 1. Generate post + images
-      # ------------------------------------------------------
-
       - name: Generate daily content
         run: |
           python scripts/daily_social_media.py generate
 
-      # ------------------------------------------------------
-      # 2. Deploy generated images/site to GitHub Pages
-      # ------------------------------------------------------
-
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload Pages artifact
+      - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
           path: "./site"
@@ -65,25 +56,13 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-      # ------------------------------------------------------
-      # 3. Publish to Buffer
-      # ------------------------------------------------------
-
       - name: Publish to Buffer
         run: |
           python scripts/daily_social_media.py publish
 
-      # ------------------------------------------------------
-      # 4. Save successful post to permanent history
-      # ------------------------------------------------------
-
-      - name: Finalize content history
+      - name: Finalize successful post
         run: |
           python scripts/daily_social_media.py finalize
-
-      # ------------------------------------------------------
-      # 5. Save generated files as workflow artifacts
-      # ------------------------------------------------------
 
       - name: Upload daily content artifacts
         uses: actions/upload-artifact@v4

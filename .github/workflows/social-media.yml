@@ -8,11 +8,23 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "daily-social-media"
+  cancel-in-progress: false
 
 jobs:
+
   generate-and-publish:
+
     runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     env:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -20,23 +32,25 @@ jobs:
 
     steps:
 
-      # ============================================================
+      # ==========================================================
       # 1. CHECKOUT
-      # ============================================================
+      # ==========================================================
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ============================================================
+      # ==========================================================
       # 2. GENERATE POST + IMAGE
-      # ============================================================
+      # ==========================================================
 
-      - name: Generate daily content and image
+      - name: Generate daily post and image
         shell: bash
         run: |
+
           set -euo pipefail
 
           python3 <<'PYTHON'
+
           import os
           import json
           import base64
@@ -46,85 +60,86 @@ jobs:
 
           OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
 
-          BASE_URL = "https://openrouter.ai/api/v1"
+          OPENROUTER_URL = "https://openrouter.ai/api/v1"
 
           headers = {
               "Authorization": f"Bearer {OPENROUTER_API_KEY}",
               "Content-Type": "application/json",
               "HTTP-Referer": "https://github.com/",
-              "X-Title": "Fazl Ullah Azaad Daily Social Media Automation",
+              "X-Title": "Fazl Ullah Azaad Daily Social Media Automation"
           }
 
-          # ------------------------------------------------------------
-          # TEXT MODEL
-          # ------------------------------------------------------------
-          #
-          # OpenRouter's free router automatically selects an available
-          # free model.
-          #
-          TEXT_MODEL = "openrouter/free"
+          # ======================================================
+          # TEXT PROMPT
+          # ======================================================
 
           prompt = r"""
-          Create ONE completely original social-media post for the
-          personal brand of Fazl Ullah Azaad.
+          Create ONE completely original, powerful, realistic,
+          intelligent and meaningful social-media post for the
+          PERSONAL BRAND of Fazl Ullah Azaad.
 
           IMPORTANT:
+
           This is for Fazl Ullah Azaad's PERSONAL BRAND.
+
           It is NOT an AELAMA advertisement.
 
-          The post must be:
+          The post should feel like it was written by a thoughtful,
+          experienced person who understands real life.
 
-          - Original
-          - Intelligent
-          - Meaningful
-          - Realistic
-          - Emotionally mature
-          - Motivational without being childish
-          - Suitable for Facebook, Instagram and LinkedIn
-          - Based on real human experiences
-          - Useful and thought-provoking
-          - Professional but natural
-          - Written in clear, powerful English
+          Suitable for:
 
-          Possible themes include:
+          - Facebook
+          - Instagram
+          - LinkedIn
+
+          Main themes can include:
 
           - Personal growth
           - Discipline
           - Consistency
           - Resilience
           - Self-respect
-          - Learning
           - Career growth
+          - Learning
           - Leadership
           - Failure and recovery
           - Patience
           - Responsibility
           - Hard work
-          - Building yourself
-          - Overcoming difficulties
+          - Personal development
           - Realistic success
-          - Human behavior
-          - Life lessons
+          - Human experiences
+          - Overcoming difficulties
 
-          Avoid:
+          Requirements:
 
-          - Generic motivational clichés
-          - Fake quotations
-          - Quotes attributed to famous people
-          - Invented statistics
-          - Unsupported factual claims
-          - Excessive emojis
-          - Overly dramatic language
-          - Fake success stories
-          - AELAMA promotion
-          - Political persuasion
-          - Religious preaching unless directly relevant
-          - Repeating the same idea in different words
+          - Completely original
+          - Intelligent
+          - Meaningful
+          - Realistic
+          - Emotionally mature
+          - Professional
+          - Natural English
+          - Thought-provoking
+          - Not childish
+          - Not overly dramatic
+          - Not generic
 
-          The post should feel like something a thoughtful,
-          experienced person would genuinely publish.
+          DO NOT:
 
-          Create EXACTLY these JSON fields:
+          - Invent quotations
+          - Attribute quotes to famous people
+          - Invent statistics
+          - Make unsupported factual claims
+          - Use fake stories
+          - Promote AELAMA
+          - Use political persuasion
+          - Use excessive emojis
+          - Repeat yesterday's type of message
+          - Use empty motivational clichés
+
+          Create exactly these fields:
 
           {
             "caption": "...",
@@ -135,26 +150,25 @@ jobs:
             "image_prompt": "..."
           }
 
-          Requirements:
+          CAPTION:
+          A short, powerful opening line.
 
-          caption:
-          A short powerful opening line or headline.
+          DESCRIPTION:
+          The complete meaningful social-media post.
 
-          description:
-          The complete social-media post.
+          SEO KEYWORDS:
+          8-12 relevant keywords.
 
-          seo_keywords:
-          8-12 relevant search-friendly keywords.
-
-          facebook_instagram_hashtags:
+          FACEBOOK/INSTAGRAM HASHTAGS:
           8-12 natural hashtags.
 
-          linkedin_hashtags:
+          LINKEDIN HASHTAGS:
           4-8 professional hashtags.
 
-          image_prompt:
-          A detailed prompt for a photorealistic cinematic image
-          representing the meaning of the post.
+          IMAGE PROMPT:
+
+          Create a detailed prompt for ONE photorealistic,
+          cinematic image representing the meaning of the post.
 
           Image requirements:
 
@@ -163,25 +177,44 @@ jobs:
           - Professional
           - Realistic human environment
           - Natural lighting
-          - Vertical 9:16 composition
           - Strong visual storytelling
+          - Vertical 9:16
           - No text
           - No words
           - No letters
           - No logos
           - No watermark
-          - No captions inside the image
+          - No captions
 
           Return ONLY valid JSON.
           """
 
-          def call_openrouter(payload, retries=4):
+          # ======================================================
+          # OPENROUTER TEXT REQUEST
+          # ======================================================
+
+          def generate_text():
+
+              payload = {
+                  "model": "openrouter/free",
+                  "messages": [
+                      {
+                          "role": "user",
+                          "content": prompt
+                      }
+                  ],
+                  "temperature": 0.9,
+                  "max_tokens": 2500
+              }
+
               last_error = None
 
-              for attempt in range(retries):
+              for attempt in range(5):
+
                   try:
+
                       response = requests.post(
-                          f"{BASE_URL}/chat/completions",
+                          f"{OPENROUTER_URL}/chat/completions",
                           headers=headers,
                           json=payload,
                           timeout=120
@@ -192,65 +225,70 @@ jobs:
 
                       last_error = (
                           f"HTTP {response.status_code}: "
-                          f"{response.text[:1000]}"
+                          f"{response.text[:1500]}"
                       )
 
-                      # Retry temporary errors
-                      if response.status_code in (408, 429, 500, 502, 503, 504):
-                          time.sleep(2 ** attempt)
+                      if response.status_code in (
+                          408,
+                          429,
+                          500,
+                          502,
+                          503,
+                          504
+                      ):
+
+                          wait = 2 ** attempt
+
+                          print(
+                              f"Temporary OpenRouter error. "
+                              f"Retrying in {wait}s..."
+                          )
+
+                          time.sleep(wait)
                           continue
 
                       raise RuntimeError(last_error)
 
-                  except requests.RequestException as e:
-                      last_error = str(e)
+                  except requests.RequestException as error:
 
-                      if attempt < retries - 1:
+                      last_error = str(error)
+
+                      if attempt < 4:
                           time.sleep(2 ** attempt)
                           continue
 
                       raise
 
               raise RuntimeError(
-                  f"OpenRouter failed after {retries} attempts: {last_error}"
+                  f"OpenRouter text generation failed: {last_error}"
               )
 
-          # ------------------------------------------------------------
-          # GENERATE TEXT
-          # ------------------------------------------------------------
+          print("Generating today's post...")
 
-          print("Generating today's social-media post...")
-
-          payload = {
-              "model": TEXT_MODEL,
-              "messages": [
-                  {
-                      "role": "user",
-                      "content": prompt
-                  }
-              ],
-              "temperature": 0.9,
-              "max_tokens": 2500
-          }
-
-          result = call_openrouter(payload)
+          result = generate_text()
 
           content = result["choices"][0]["message"]["content"]
 
-          # Remove accidental markdown fences
           content = content.strip()
 
+          # Remove accidental markdown fences
           if content.startswith("```"):
               content = content.replace("```json", "", 1)
               content = content.replace("```", "", 1)
               content = content.strip()
 
           try:
+
               post = json.loads(content)
+
           except json.JSONDecodeError:
-              print("Model returned:")
+
+              print("MODEL RESPONSE:")
               print(content)
-              raise RuntimeError("OpenRouter did not return valid JSON.")
+
+              raise RuntimeError(
+                  "OpenRouter did not return valid JSON."
+              )
 
           required_fields = [
               "caption",
@@ -262,121 +300,597 @@ jobs:
           ]
 
           for field in required_fields:
+
               if field not in post:
                   raise RuntimeError(
                       f"Missing required field: {field}"
                   )
 
-          # ------------------------------------------------------------
-          # GENERATE IMAGE THROUGH OPENROUTER
-          # ------------------------------------------------------------
+          # ======================================================
+          # GENERATE ONE IMAGE
+          # ======================================================
 
-          print("Generating today's image through OpenRouter...")
+          print("Generating ONE image...")
 
           image_payload = {
-              # Low-cost image model.
-              # Change this model later if you want another one.
+
               "model": "bytedance-seed/seedream-4.5",
 
               "prompt": post["image_prompt"],
 
+              "n": 1,
+
+              "resolution": "1K",
+
               "aspect_ratio": "9:16",
 
-              "n": 1
+              "output_format": "jpeg"
           }
 
           image_response = requests.post(
-              f"{BASE_URL}/images",
+
+              f"{OPENROUTER_URL}/images",
+
               headers=headers,
+
               json=image_payload,
+
               timeout=180
           )
 
           if image_response.status_code != 200:
+
               raise RuntimeError(
                   "OpenRouter image generation failed: "
                   f"HTTP {image_response.status_code}: "
                   f"{image_response.text[:2000]}"
               )
 
-          image_data = image_response.json()
+          image_result = image_response.json()
 
-          if not image_data.get("data"):
+          images = image_result.get("data") or []
+
+          if not images:
+
               raise RuntimeError(
-                  "OpenRouter returned no image data."
+                  "OpenRouter returned no image."
               )
 
-          encoded_image = image_data["data"][0].get("b64_json")
+          encoded_image = images[0].get("b64_json")
 
           if not encoded_image:
+
               raise RuntimeError(
-                  "OpenRouter image response did not contain b64_json."
+                  "OpenRouter did not return b64_json."
               )
 
           image_bytes = base64.b64decode(encoded_image)
 
-          Path("generated_images").mkdir(
+          # ======================================================
+          # CREATE GITHUB PAGES CONTENT
+          # ======================================================
+
+          site = Path("site")
+
+          site.mkdir(
               parents=True,
               exist_ok=True
           )
 
-          image_path = Path(
-              "generated_images/daily_image.jpg"
-          )
+          image_path = site / "daily_image.jpg"
 
           image_path.write_bytes(image_bytes)
 
-          # ------------------------------------------------------------
+          # Simple index page
+          index_html = """
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>Fazl Ullah Azaad</title>
+          </head>
+          <body>
+            <img
+              src="daily_image.jpg"
+              alt="Fazl Ullah Azaad daily social media image"
+            >
+          </body>
+          </html>
+          """
+
+          (site / "index.html").write_text(
+              index_html,
+              encoding="utf-8"
+          )
+
+          # ======================================================
           # SAVE POST DATA
-          # ------------------------------------------------------------
+          # ======================================================
 
-          post["image_file"] = str(image_path)
+          post["image_file"] = "daily_image.jpg"
 
-          with open("post_data.json", "w", encoding="utf-8") as f:
+          with open(
+              "post_data.json",
+              "w",
+              encoding="utf-8"
+          ) as file:
+
               json.dump(
                   post,
-                  f,
+                  file,
                   ensure_ascii=False,
                   indent=2
               )
 
           print("")
-          print("========================================")
-          print("TODAY'S GENERATED CONTENT")
-          print("========================================")
-          print(json.dumps(
-              post,
-              ensure_ascii=False,
-              indent=2
-          ))
-          print("========================================")
+          print("==========================================")
+          print("TODAY'S SOCIAL MEDIA CONTENT")
+          print("==========================================")
 
           print(
-              f"Image saved to: {image_path}"
+              json.dumps(
+                  post,
+                  ensure_ascii=False,
+                  indent=2
+              )
           )
+
+          print("==========================================")
 
           PYTHON
 
-      # ============================================================
-      # 3. DISPLAY GENERATED CONTENT
-      # ============================================================
+      # ==========================================================
+      # 3. PREPARE GITHUB PAGES
+      # ==========================================================
 
-      - name: Show generated post
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      # ==========================================================
+      # 4. UPLOAD IMAGE TO GITHUB PAGES
+      # ==========================================================
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: "./site"
+
+      # ==========================================================
+      # 5. DEPLOY IMAGE
+      # ==========================================================
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      # ==========================================================
+      # 6. WAIT FOR PUBLIC IMAGE
+      # ==========================================================
+
+      - name: Wait for image to become publicly available
+        shell: bash
         run: |
-          echo "=============================="
-          echo "GENERATED POST"
-          echo "=============================="
-          cat post_data.json
 
-      # ============================================================
-      # 4. UPLOAD ARTIFACT
-      # ============================================================
+          set -euo pipefail
 
-      - name: Upload generated content
+          IMAGE_URL="${{ steps.deployment.outputs.page_url }}daily_image.jpg"
+
+          echo "Public image URL:"
+          echo "$IMAGE_URL"
+
+          for i in {1..12}; do
+
+            STATUS=$(curl \
+              -L \
+              -s \
+              -o /dev/null \
+              -w "%{http_code}" \
+              "$IMAGE_URL")
+
+            echo "Attempt $i: HTTP $STATUS"
+
+            if [ "$STATUS" = "200" ]; then
+
+              echo "$IMAGE_URL" > image_url.txt
+
+              exit 0
+
+            fi
+
+            sleep 5
+
+          done
+
+          echo "Image did not become publicly available."
+          exit 1
+
+      # ==========================================================
+      # 7. PUBLISH TO BUFFER
+      # ==========================================================
+
+      - name: Publish to Buffer
+        shell: bash
+        run: |
+
+          set -euo pipefail
+
+          python3 <<'PYTHON'
+
+          import os
+          import json
+          import requests
+          from pathlib import Path
+
+          BUFFER_API_KEY = os.environ["BUFFER_API_KEY"]
+
+          BUFFER_URL = "https://api.buffer.com"
+
+          headers = {
+              "Authorization":
+                  f"Bearer {BUFFER_API_KEY}",
+
+              "Content-Type":
+                  "application/json"
+          }
+
+          # ======================================================
+          # LOAD POST
+          # ======================================================
+
+          with open(
+              "post_data.json",
+              "r",
+              encoding="utf-8"
+          ) as file:
+
+              post = json.load(file)
+
+          with open(
+              "image_url.txt",
+              "r",
+              encoding="utf-8"
+          ) as file:
+
+              image_url = file.read().strip()
+
+          # ======================================================
+          # GET BUFFER ORGANIZATION
+          # ======================================================
+
+          organization_query = """
+          query GetOrganizations {
+
+            account {
+
+              organizations {
+
+                id
+                name
+
+              }
+
+            }
+
+          }
+          """
+
+          response = requests.post(
+
+              BUFFER_URL,
+
+              headers=headers,
+
+              json={
+                  "query": organization_query
+              },
+
+              timeout=60
+          )
+
+          data = response.json()
+
+          if "errors" in data:
+
+              raise RuntimeError(
+                  "Buffer organization request failed:\n"
+                  + json.dumps(data, indent=2)
+              )
+
+          organizations = (
+              data
+              .get("data", {})
+              .get("account", {})
+              .get("organizations", [])
+          )
+
+          if not organizations:
+
+              raise RuntimeError(
+                  "No Buffer organization found."
+              )
+
+          organization_id = organizations[0]["id"]
+
+          print(
+              f"Buffer organization: "
+              f"{organizations[0]['name']}"
+          )
+
+          # ======================================================
+          # GET CHANNELS
+          # ======================================================
+
+          channel_query = """
+          query GetChannels($organizationId: String!) {
+
+            channels(
+              input: {
+                organizationId: $organizationId
+              }
+            ) {
+
+              id
+              name
+              displayName
+              service
+
+            }
+
+          }
+          """
+
+          response = requests.post(
+
+              BUFFER_URL,
+
+              headers=headers,
+
+              json={
+                  "query": channel_query,
+                  "variables": {
+                      "organizationId":
+                          organization_id
+                  }
+              },
+
+              timeout=60
+          )
+
+          data = response.json()
+
+          if "errors" in data:
+
+              raise RuntimeError(
+                  "Buffer channel request failed:\n"
+                  + json.dumps(data, indent=2)
+              )
+
+          channels = (
+              data
+              .get("data", {})
+              .get("channels", [])
+          )
+
+          wanted_services = {
+              "facebook",
+              "instagram",
+              "linkedin"
+          }
+
+          selected_channels = [
+
+              channel
+
+              for channel in channels
+
+              if channel.get("service")
+              in wanted_services
+
+          ]
+
+          if not selected_channels:
+
+              print("Available Buffer channels:")
+
+              print(
+                  json.dumps(
+                      channels,
+                      indent=2
+                  )
+              )
+
+              raise RuntimeError(
+                  "No Facebook, Instagram or LinkedIn "
+                  "channels were found."
+              )
+
+          print("")
+          print("Selected Buffer channels:")
+
+          for channel in selected_channels:
+
+              print(
+                  f"- {channel.get('service')}: "
+                  f"{channel.get('displayName') or channel.get('name')}"
+              )
+
+          # ======================================================
+          # BUILD PLATFORM-SPECIFIC TEXT
+          # ======================================================
+
+          caption = post["caption"].strip()
+
+          description = post["description"].strip()
+
+          fb_ig_tags = " ".join(
+              post["facebook_instagram_hashtags"]
+          )
+
+          linkedin_tags = " ".join(
+              post["linkedin_hashtags"]
+          )
+
+          # ======================================================
+          # PUBLISH TO EACH CHANNEL
+          # ======================================================
+
+          mutation = """
+          mutation CreatePost(
+              $text: String!,
+              $channelId: ChannelId!,
+              $imageUrl: URL!
+          ) {
+
+            createPost(
+
+              input: {
+
+                text: $text
+
+                channelId: $channelId
+
+                schedulingType: automatic
+
+                mode: shareNow
+
+                assets: [
+
+                  {
+
+                    image: {
+
+                      url: $imageUrl
+
+                    }
+
+                  }
+
+                ]
+
+              }
+
+            ) {
+
+              ... on PostActionSuccess {
+
+                post {
+
+                  id
+                  text
+                  status
+                  shareMode
+
+                }
+
+              }
+
+              ... on MutationError {
+
+                message
+
+              }
+
+            }
+
+          }
+          """
+
+          for channel in selected_channels:
+
+              service = channel["service"]
+
+              if service in (
+                  "facebook",
+                  "instagram"
+              ):
+
+                  hashtags = fb_ig_tags
+
+              else:
+
+                  hashtags = linkedin_tags
+
+              final_text = (
+                  f"{caption}\n\n"
+                  f"{description}\n\n"
+                  f"{hashtags}"
+              )
+
+              print("")
+              print(
+                  f"Publishing to {service}..."
+              )
+
+              response = requests.post(
+
+                  BUFFER_URL,
+
+                  headers=headers,
+
+                  json={
+                      "query": mutation,
+                      "variables": {
+                          "text": final_text,
+                          "channelId": channel["id"],
+                          "imageUrl": image_url
+                      }
+                  },
+
+                  timeout=90
+              )
+
+              data = response.json()
+
+              print(
+                  json.dumps(
+                      data,
+                      indent=2,
+                      ensure_ascii=False
+                  )
+              )
+
+              if "errors" in data:
+
+                  raise RuntimeError(
+                      f"Buffer API error for "
+                      f"{service}:\n"
+                      + json.dumps(
+                          data,
+                          indent=2
+                      )
+                  )
+
+              result = (
+                  data
+                  .get("data", {})
+                  .get("createPost", {})
+              )
+
+              if "message" in result:
+
+                  raise RuntimeError(
+                      f"Buffer could not create "
+                      f"{service} post: "
+                      f"{result['message']}"
+                  )
+
+          print("")
+          print("==========================================")
+          print("SUCCESS")
+          print("==========================================")
+          print("Post sent to all available target channels.")
+
+          PYTHON
+
+      # ==========================================================
+      # 8. SAVE ARTIFACT FOR YOU
+      # ==========================================================
+
+      - name: Upload daily content artifact
         uses: actions/upload-artifact@v4
         with:
           name: daily-social-media-content
           path: |
             post_data.json
-            generated_images/
+            site/daily_image.jpg
           retention-days: 7

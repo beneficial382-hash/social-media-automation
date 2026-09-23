@@ -721,7 +721,7 @@ def generate_image(
         "model": IMAGE_MODEL,
         "prompt": prompt,
         "aspect_ratio": "9:16",
-        "resolution": "1K",
+        "resolution": "2K",
         "n": 1,
     }
 

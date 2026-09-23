@@ -446,15 +446,52 @@ the communication of the idea.
 
 Otherwise choose 1.
 
+IMAGE RELEVANCE IS CRITICAL:
+
+The image must be specifically derived from the actual post
+being written. Do not generate a generic motivational image
+that could fit any post.
+
+Before creating each image prompt, identify the post's:
+- central idea
+- practical lesson or insight
+- emotional or intellectual meaning
+- most useful visual metaphor or real-life situation
+
+Then create a visual scene that communicates that specific
+idea naturally.
+
+The image should make sense even when viewed without the
+caption. It should reinforce the post rather than merely
+decorate it.
+
+Prefer concrete, believable real-life scenes, people,
+environments, objects, actions, visual contrasts, or
+metaphors that directly represent the post's message.
+
+Avoid generic images such as:
+- random people looking at sunsets
+- generic mountains
+- generic roads
+- generic success poses
+- random businessmen smiling at cameras
+- unrelated luxury or inspirational scenes
+
+The visual concept must be different when the post's central
+idea is different.
+
 Images must be:
 
 - photorealistic
 - cinematic
 - professional
 - realistic
+- visually meaningful
 - vertical 9:16
 - suitable for a professional personal brand
-- visually meaningful
+- naturally composed for social media
+- high visual quality
+- realistic human anatomy and expressions
 
 Images must contain:
 
@@ -465,9 +502,21 @@ Images must contain:
 - NO watermark
 - NO typography
 - NO quotation written inside the image
+- NO artificial UI elements
+- NO social-media interface
 
-The image should communicate the idea visually rather than
-literally displaying the caption.
+For every image prompt, explicitly describe:
+1. the main subject or scene
+2. what the subject is doing
+3. the environment
+4. the visual metaphor or relationship to the post
+5. realistic lighting
+6. cinematic composition
+7. camera perspective/depth
+8. important visual details
+
+Do not simply repeat the caption as an image prompt.
+Translate the meaning of the post into a strong visual scene.
 
 Return ONLY valid JSON.
 
@@ -1481,6 +1530,38 @@ def graphql_escape(text):
     )
 
 
+def build_social_post_text(post, service):
+    caption = str(post.get("caption", "")).strip()
+
+    if service in ("facebook", "instagram"):
+        hashtags = post.get(
+            "facebook_instagram_hashtags",
+            [],
+        )
+    elif service == "linkedin":
+        hashtags = post.get(
+            "linkedin_hashtags",
+            [],
+        )
+    else:
+        hashtags = []
+
+    cleaned_hashtags = []
+    for hashtag in hashtags:
+        hashtag = str(hashtag).strip()
+        if hashtag and hashtag not in cleaned_hashtags:
+            cleaned_hashtags.append(hashtag)
+
+    if cleaned_hashtags:
+        return (
+            caption
+            + "\n\n"
+            + " ".join(cleaned_hashtags)
+        )
+
+    return caption
+
+
 def create_buffer_post(
     service,
     channel_id,
@@ -1661,8 +1742,6 @@ def publish():
             f"{channel.get('displayName') or channel.get('name')}"
         )
 
-    caption = post["caption"]
-
     results = {}
 
     for service in (
@@ -1675,10 +1754,15 @@ def publish():
             f"{service.title()}..."
         )
 
+        social_text = build_social_post_text(
+            post,
+            service,
+        )
+
         result = create_buffer_post(
             service,
             channels[service]["id"],
-            caption,
+            social_text,
             image_urls,
         )
 

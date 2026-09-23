@@ -1,3 +1,4 @@
+```python
 import os
 import sys
 import json
@@ -1469,6 +1470,18 @@ def get_buffer_channels():
 # ============================================================
 # BUFFER CREATE POST
 # ============================================================
+
+def graphql_escape(text):
+    return (
+        str(text)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\r\n", "\\n")
+        .replace("\n", "\\n")
+        .replace("\r", "\\n")
+    )
+
+
 def create_buffer_post(
     service,
     channel_id,
@@ -1493,8 +1506,18 @@ def create_buffer_post(
 
     escaped_text = graphql_escape(text)
 
-    # Buffer uses the metadata field for
-    # platform-specific configuration.
+    # Buffer uses metadata for platform-specific settings.
+    #
+    # Facebook:
+    # normal Facebook feed post.
+    #
+    # Instagram:
+    # one image = post
+    # two images = carousel
+    #
+    # LinkedIn:
+    # no additional metadata required.
+
     metadata = ""
 
     if service == "facebook":
@@ -1507,18 +1530,22 @@ def create_buffer_post(
         """
 
     elif service == "instagram":
-        metadata = """
-          metadata: {
-            instagram: {
-              type: post
+        instagram_type = (
+            "carousel"
+            if len(image_urls) > 1
+            else "post"
+        )
+
+        metadata = f"""
+          metadata: {{
+            instagram: {{
+              type: {instagram_type}
               shouldShareToFeed: true
-            }
-          }
+            }}
+          }}
         """
 
     elif service == "linkedin":
-        # LinkedIn does not require additional
-        # metadata for this normal post.
         metadata = ""
 
     mutation = f"""
@@ -1832,14 +1859,22 @@ def finalize():
         check=True,
     )
 
+    # Only add files that actually exist.
+    files_to_add = [
+        "content_history.json",
+        "post_data.json",
+    ]
+
+    if PENDING_FILE.exists():
+        files_to_add.append(
+            "pending_post.json"
+        )
+
     subprocess.run(
         [
             "git",
             "add",
-            "content_history.json",
-            "post_data.json",
-            "pending_post.json",
-        ],
+        ] + files_to_add,
         check=True,
     )
 
@@ -1911,3 +1946,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+```

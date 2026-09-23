@@ -34,5 +34,11 @@
   "image_urls": [
     "https://raw.githubusercontent.com/beneficial382-hash/social-media-automation/main/site/media/2026-09-23-the-hidden-cost-of-unmanaged-friction-in-professio-1.jpg"
   ],
-  "publication_status": "pending"
+  "publication_status": "published",
+  "published_at_utc": "2026-09-23T07:01:35.700332+00:00",
+  "buffer_posts": {
+    "facebook": "6ab3792f8746630a209a006c",
+    "instagram": "6ab379393966ae965a9be800",
+    "linkedin": "6ab379459a1177ac6d5a7d56"
+  }
 }

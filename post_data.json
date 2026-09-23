@@ -41,5 +41,11 @@
   "image_urls": [
     "https://raw.githubusercontent.com/beneficial382-hash/social-media-automation/main/site/media/2026-09-23-raising-your-operational-floor-matters-far-more-th-1.jpg"
   ],
-  "publication_status": "pending"
+  "publication_status": "published",
+  "published_at_utc": "2026-09-23T07:29:25.988226+00:00",
+  "buffer_posts": {
+    "facebook": "6ab37fbb3966ae965a9cea6c",
+    "instagram": "6ab37fc03966ae965a9ceafd",
+    "linkedin": "6ab37fcabf18ac4f335d8891"
+  }
 }

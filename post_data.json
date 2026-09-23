@@ -46,5 +46,11 @@
   "image_urls": [
     "https://raw.githubusercontent.com/beneficial382-hash/social-media-automation/main/site/media/2026-09-23-the-hidden-cost-of-substituting-polite-avoidance-f-1.jpg"
   ],
-  "publication_status": "pending"
+  "publication_status": "published",
+  "published_at_utc": "2026-09-23T17:30:49.517384+00:00",
+  "buffer_posts": {
+    "facebook": "6ab40ca9691f5166c0d2f7f8",
+    "instagram": "6ab40cb49c54d641cdb5938f",
+    "linkedin": "6ab40cbe8eaa5f6fddc2c9b9"
+  }
 }

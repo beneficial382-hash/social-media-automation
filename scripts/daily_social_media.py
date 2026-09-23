@@ -35,7 +35,7 @@ OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_IMAGE_URL = "https://openrouter.ai/api/v1/images"
 BUFFER_URL = "https://api.buffer.com"
 
-TEXT_MODEL = "google/gemini-3.1-flash-lite"
+TEXT_MODEL = "google/gemini-3.8-flash"
 IMAGE_MODEL = "bytedance-seed/seedream-4.5"
 
 REPO_OWNER = "beneficial382-hash"

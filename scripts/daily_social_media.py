@@ -546,6 +546,10 @@ Do NOT use text that is merely decorative.
 
 The headline and supporting line must be included in the returned JSON so the image-generation prompt can use the exact intended wording.
 
+For image_count = 1, return exactly 1 headline, exactly 1 supporting-text item, and exactly 1 image prompt.
+For image_count = 2, return exactly 2 headlines, exactly 2 supporting-text items, and exactly 2 image prompts.
+Each image prompt must explicitly include its corresponding exact headline and supporting text.
+
 The image text must be spelled correctly and should be simple enough for an image model to render clearly.
 
 The graphic must contain:
@@ -585,8 +589,14 @@ Required structure:
   "facebook_instagram_hashtags": ["#...", "#..."],
   "linkedin_hashtags": ["#...", "#..."],
   "image_count": 1,
+  "image_headlines": [
+    "short relevant headline for each image"
+  ],
+  "image_supporting_text": [
+    "optional short supporting line for each image"
+  ],
   "image_prompts": [
-    "complete image generation prompt"
+    "complete image generation prompt including the exact headline and supporting text"
   ]
 }
 """

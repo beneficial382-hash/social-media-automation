@@ -330,6 +330,8 @@ def validate_content(data):
         "linkedin_hashtags",
         "image_count",
         "image_prompts",
+        "image_headlines",
+        "image_supporting_text",
     ]
 
     for key in required:
@@ -374,6 +376,34 @@ def validate_content(data):
             "image_prompts count does not "
             "match image_count."
         )
+
+    if not isinstance(data["image_headlines"], list):
+        raise RuntimeError(
+            "image_headlines must be a list."
+        )
+
+    if len(data["image_headlines"]) != data["image_count"]:
+        raise RuntimeError(
+            "image_headlines count does not "
+            "match image_count."
+        )
+
+    if not isinstance(data["image_supporting_text"], list):
+        raise RuntimeError(
+            "image_supporting_text must be a list."
+        )
+
+    if len(data["image_supporting_text"]) != data["image_count"]:
+        raise RuntimeError(
+            "image_supporting_text count does not "
+            "match image_count."
+        )
+
+    for headline in data["image_headlines"]:
+        if not str(headline).strip():
+            raise RuntimeError(
+                "Every image headline must be non-empty."
+            )
 
 
 # ============================================================
@@ -493,15 +523,34 @@ Images must be:
 - high visual quality
 - realistic human anatomy and expressions
 
-Images must contain:
+TEXT-ON-IMAGE GRAPHIC RULES:
 
-- NO text
-- NO words
-- NO letters
+Every generated image must be a professional social-media graphic, not just a plain photograph.
+
+The graphic must contain short, attractive, readable text that is directly relevant to the actual post.
+
+For each image, create:
+- a short main headline of about 3-8 words
+- an optional short supporting line of about 5-14 words when it genuinely improves the message
+- text that reflects the central idea, lesson, or insight of THIS post
+- clean, professional typography
+- strong visual hierarchy
+- excellent contrast and mobile readability
+- tasteful, modern color choices that complement the scene
+- a polished personal-brand/social-media design
+
+Do NOT put the entire caption on the image.
+Do NOT use generic motivational wording unrelated to the post.
+Do NOT use random quotes.
+Do NOT use text that is merely decorative.
+
+The headline and supporting line must be included in the returned JSON so the image-generation prompt can use the exact intended wording.
+
+The image text must be spelled correctly and should be simple enough for an image model to render clearly.
+
+The graphic must contain:
 - NO logos
 - NO watermark
-- NO typography
-- NO quotation written inside the image
 - NO artificial UI elements
 - NO social-media interface
 
@@ -510,13 +559,19 @@ For every image prompt, explicitly describe:
 2. what the subject is doing
 3. the environment
 4. the visual metaphor or relationship to the post
-5. realistic lighting
-6. cinematic composition
-7. camera perspective/depth
-8. important visual details
+5. the exact headline text to render
+6. the exact supporting text, if any
+7. typography placement and hierarchy
+8. professional color treatment and contrast
+9. realistic lighting
+10. cinematic composition
+11. camera perspective/depth
+12. important visual details
+
+The text must be integrated naturally into the composition without covering important parts of the subject.
 
 Do not simply repeat the caption as an image prompt.
-Translate the meaning of the post into a strong visual scene.
+Translate the meaning of the post into a strong visual scene and a concise professional headline graphic.
 
 Return ONLY valid JSON.
 
@@ -993,13 +1048,40 @@ def create_site(
 
     image_html = ""
 
-    for url in post[
-        "image_urls"
-    ]:
+    for index, url in enumerate(
+        post["image_urls"]
+    ):
+        headline = ""
+        supporting = ""
+
+        headlines = post.get(
+            "image_headlines",
+            [],
+        )
+        supporting_text = post.get(
+            "image_supporting_text",
+            [],
+        )
+
+        if index < len(headlines):
+            headline = str(
+                headlines[index]
+            ).strip()
+
+        if index < len(supporting_text):
+            supporting = str(
+                supporting_text[index]
+            ).strip()
+
+        alt_text = (
+            headline
+            or "Daily visual"
+        )
+
         image_html += f"""
         <img
           src="{html_escape(url)}"
-          alt="Daily visual"
+          alt="{html_escape(alt_text)}"
           loading="lazy"
         >
         """
@@ -1323,6 +1405,12 @@ def generate():
             ]
         ),
         "image_count": image_count,
+        "image_headlines": candidate[
+            "image_headlines"
+        ],
+        "image_supporting_text": candidate[
+            "image_supporting_text"
+        ],
         "image_prompts": candidate[
             "image_prompts"
         ],
@@ -1806,6 +1894,67 @@ def publish():
 
 
 # ============================================================
+# MEDIA CLEANUP
+# ============================================================
+
+MEDIA_RETENTION_DAYS = 7
+
+
+def cleanup_old_media():
+    """
+    Remove generated media files older than MEDIA_RETENTION_DAYS.
+
+    This runs only after successful Buffer publication/finalization, so
+    the current day's image remains available during publishing.
+    """
+    if not MEDIA_DIR.exists():
+        return []
+
+    cutoff_date = (
+        now_utc().date()
+        - __import__("datetime").timedelta(
+            days=MEDIA_RETENTION_DAYS
+        )
+    )
+
+    deleted = []
+
+    for path in MEDIA_DIR.iterdir():
+        if not path.is_file():
+            continue
+
+        match = re.match(
+            r"^(\d{4}-\d{2}-\d{2})-",
+            path.name,
+        )
+
+        if not match:
+            continue
+
+        try:
+            file_date = datetime.strptime(
+                match.group(1),
+                "%Y-%m-%d",
+            ).date()
+        except ValueError:
+            continue
+
+        if file_date < cutoff_date:
+            path.unlink()
+            deleted.append(str(path))
+
+    if deleted:
+        print(
+            f"Removed {len(deleted)} media file(s) "
+            f"older than {MEDIA_RETENTION_DAYS} days."
+        )
+    else:
+        print("No old media files needed cleanup.")
+
+    return deleted
+
+
+# ============================================================
 # FINALIZE HISTORY
 # ============================================================
 
@@ -1898,6 +2047,14 @@ def finalize():
                 "image_count": post[
                     "image_count"
                 ],
+                "image_headlines": post.get(
+                    "image_headlines",
+                    [],
+                ),
+                "image_supporting_text": post.get(
+                    "image_supporting_text",
+                    [],
+                ),
                 "image_files": post[
                     "image_files"
                 ],
@@ -1942,7 +2099,11 @@ def finalize():
         check=True,
     )
 
-    # Only add files that actually exist.
+    # Remove only old generated images after successful publication.
+    # The current day's image remains available for at least the retention window.
+    cleanup_old_media()
+
+    # Stage permanent history/data and any media deletions.
     files_to_add = [
         "content_history.json",
         "post_data.json",
@@ -1958,6 +2119,17 @@ def finalize():
             "git",
             "add",
         ] + files_to_add,
+        check=True,
+    )
+
+    # Stage deleted/changed media files as well.
+    subprocess.run(
+        [
+            "git",
+            "add",
+            "-A",
+            "site/media",
+        ],
         check=True,
     )
 

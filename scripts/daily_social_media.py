@@ -1469,27 +1469,6 @@ def get_buffer_channels():
 # ============================================================
 # BUFFER CREATE POST
 # ============================================================
-
-def graphql_escape(text):
-    return (
-        str(text)
-        .replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace(
-            "\r\n",
-            "\\n",
-        )
-        .replace(
-            "\n",
-            "\\n",
-        )
-        .replace(
-            "\r",
-            "\\n",
-        )
-    )
-
-
 def create_buffer_post(
     service,
     channel_id,
@@ -1510,22 +1489,37 @@ def create_buffer_post(
             % graphql_escape(url)
         )
 
-    assets = ",\n".join(
-        asset_entries
-    )
+    assets = ",\n".join(asset_entries)
 
-    escaped_text = graphql_escape(
-        text
-    )
+    escaped_text = graphql_escape(text)
 
-    # Facebook requires an explicit post type.
-    # Instagram and LinkedIn use the normal post input.
-    service_input = ""
+    # Buffer uses the metadata field for
+    # platform-specific configuration.
+    metadata = ""
 
     if service == "facebook":
-        service_input = """
-          type: post
+        metadata = """
+          metadata: {
+            facebook: {
+              type: post
+            }
+          }
         """
+
+    elif service == "instagram":
+        metadata = """
+          metadata: {
+            instagram: {
+              type: post
+              shouldShareToFeed: true
+            }
+          }
+        """
+
+    elif service == "linkedin":
+        # LinkedIn does not require additional
+        # metadata for this normal post.
+        metadata = ""
 
     mutation = f"""
     mutation CreatePost {{
@@ -1535,7 +1529,7 @@ def create_buffer_post(
           channelId: "{graphql_escape(channel_id)}"
           schedulingType: automatic
           mode: shareNow
-          {service_input}
+          {metadata}
           assets: [
             {assets}
           ]
@@ -1579,9 +1573,7 @@ def create_buffer_post(
             )
         )
 
-    post = result.get(
-        "post"
-    )
+    post = result.get("post")
 
     if not post:
         raise RuntimeError(

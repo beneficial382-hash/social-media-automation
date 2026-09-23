@@ -35,10 +35,7 @@ OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_IMAGE_URL = "https://openrouter.ai/api/v1/images"
 BUFFER_URL = "https://api.buffer.com"
 
-# Reliable text model through OpenRouter.
 TEXT_MODEL = "google/gemini-3.1-flash-lite"
-
-# Image generation model.
 IMAGE_MODEL = "bytedance-seed/seedream-4.5"
 
 REPO_OWNER = "beneficial382-hash"
@@ -432,7 +429,7 @@ posts.
 
 Changing only the wording does NOT make a post original.
 
-Changing only the example does NOT make it original.
+Changing only the example does NOT make a post original.
 
 The new post must introduce a different lesson, perspective,
 observation, or practical insight.
@@ -570,7 +567,6 @@ def local_originality_check(
         candidate_text
     )
 
-    # Exact duplicate against the complete history.
     for item in history:
         old_text = (
             item.get("theme", "")
@@ -584,7 +580,6 @@ def local_originality_check(
                 "Exact duplicate detected.",
             )
 
-    # Strong wording similarity against recent history.
     for item in history[
         -MAX_LOCAL_SIMILARITY_HISTORY:
     ]:
@@ -743,9 +738,7 @@ def generate_image(
 
     try:
         image = data["data"][0]
-
         image_base64 = image["b64_json"]
-
     except Exception:
         raise RuntimeError(
             "OpenRouter did not return the expected "
@@ -979,8 +972,10 @@ def create_site(
 <head>
 <meta charset="UTF-8">
 
-<meta name="viewport"
-      content="width=device-width, initial-scale=1.0">
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0"
+>
 
 <title>
 Fazl Ullah Azaad — Daily Post
@@ -1301,7 +1296,6 @@ def generate():
 
     create_site(post)
 
-    # Images must be committed before Buffer can fetch them.
     git_commit_and_push(
         "Generate daily social media content",
         [
@@ -1311,7 +1305,6 @@ def generate():
         ],
     )
 
-    # Wait until raw GitHub URLs are actually reachable.
     for url in image_urls:
         verify_public_url(url)
 
@@ -1498,6 +1491,7 @@ def graphql_escape(text):
 
 
 def create_buffer_post(
+    service,
     channel_id,
     text,
     image_urls,
@@ -1524,6 +1518,15 @@ def create_buffer_post(
         text
     )
 
+    # Facebook requires an explicit post type.
+    # Instagram and LinkedIn use the normal post input.
+    service_input = ""
+
+    if service == "facebook":
+        service_input = """
+          type: post
+        """
+
     mutation = f"""
     mutation CreatePost {{
       createPost(
@@ -1532,6 +1535,7 @@ def create_buffer_post(
           channelId: "{graphql_escape(channel_id)}"
           schedulingType: automatic
           mode: shareNow
+          {service_input}
           assets: [
             {assets}
           ]
@@ -1654,6 +1658,7 @@ def publish():
         )
 
         result = create_buffer_post(
+            service,
             channels[service]["id"],
             caption,
             image_urls,
@@ -1732,7 +1737,6 @@ def finalize():
 
     history = load_history()
 
-    # Prevent accidental duplicate history entry.
     existing_ids = set()
 
     for item in history:

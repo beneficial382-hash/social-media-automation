@@ -48,5 +48,11 @@
   "image_urls": [
     "https://raw.githubusercontent.com/beneficial382-hash/social-media-automation/main/site/media/2026-09-24-calibrating-decision-making-speed-by-the-cost-of-r-1.jpg"
   ],
-  "publication_status": "pending"
+  "publication_status": "published",
+  "published_at_utc": "2026-09-24T07:33:07.047206+00:00",
+  "buffer_posts": {
+    "facebook": "6ab4d219521044626fe99c3b",
+    "instagram": "6ab4d21e514df3bc1ed1c056",
+    "linkedin": "6ab4d228ccbef1e0a549f124"
+  }
 }

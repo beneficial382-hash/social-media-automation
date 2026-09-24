@@ -2,7 +2,7 @@ name: Fazl Ullah Azaad - Daily Social Media Automation
 
 on:
   schedule:
-    - cron: "0 3 * * *"
+    - cron: "15 3 * * *"
   workflow_dispatch:
 
 permissions:

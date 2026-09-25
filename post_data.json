@@ -44,5 +44,11 @@
   "image_urls": [
     "https://raw.githubusercontent.com/beneficial382-hash/social-media-automation/main/site/media/2026-09-25-the-necessity-of-pruning-commitments-and-systems-t-1.jpg"
   ],
-  "publication_status": "pending"
+  "publication_status": "published",
+  "published_at_utc": "2026-09-25T04:38:31.395971+00:00",
+  "buffer_posts": {
+    "facebook": "6ab5faaecbe818dd4ff8eb9e",
+    "instagram": "6ab5fab2db73444101e04a3f",
+    "linkedin": "6ab5fabd8c95968bb02bd3c5"
+  }
 }

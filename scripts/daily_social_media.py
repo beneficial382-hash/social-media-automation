@@ -360,25 +360,81 @@ def openrouter_json(
     temperature=0.8,
     max_tokens=6000,
     schema=None,
+    required_keys=None,
 ):
-    """Request JSON with structured-output fallbacks.
+    """Request a JSON object and return the object matching required_keys.
 
-    The preferred request uses JSON Schema. If the selected model/provider
-    rejects that format, retry with the widely supported JSON-object mode.
-    Finally, retry once without response_format while explicitly requiring
-    JSON. The caller still validates the resulting object before using it.
+    OpenRouter can return valid JSON that is wrapped in another object when
+    structured-output handling is used. This helper therefore:
+      1. prefers standard JSON-object mode,
+      2. falls back to JSON Schema when supplied,
+      3. falls back to plain JSON prompting,
+      4. unwraps nested JSON objects when necessary,
+      5. retries once if the JSON is valid but does not contain the fields
+         required by the caller.
     """
-    formats = []
+    required_keys = set(required_keys or [])
+
+    def find_matching_object(value):
+        if isinstance(value, dict):
+            if not required_keys or required_keys.issubset(value.keys()):
+                return value
+
+            # Some providers/wrappers place the actual model object inside
+            # a named field such as content, output, result, data, etc.
+            preferred_keys = (
+                "content",
+                "output",
+                "result",
+                "data",
+                "response",
+                "text",
+                "json",
+                "object",
+                "arguments",
+                "daily_social_media_content",
+                "originality_audit",
+            )
+
+            for key in preferred_keys:
+                if key in value:
+                    found = find_matching_object(value[key])
+                    if found is not None:
+                        return found
+
+            # Finally inspect all nested values. This handles provider-specific
+            # wrappers without assuming a particular response shape.
+            for nested in value.values():
+                if isinstance(nested, (dict, list)):
+                    found = find_matching_object(nested)
+                    if found is not None:
+                        return found
+
+        elif isinstance(value, list):
+            for nested in value:
+                if isinstance(nested, (dict, list)):
+                    found = find_matching_object(nested)
+                    if found is not None:
+                        return found
+
+        return None
+
+    # JSON-object mode is deliberately preferred. It is simpler and more
+    # portable across model/provider combinations than provider-specific
+    # JSON-schema enforcement.
+    formats = [
+        {"type": "json_object"},
+    ]
 
     if schema is not None:
         formats.append(schema)
 
-    formats.append({"type": "json_object"})
     formats.append(None)
 
     last_error = None
+    last_parsed = None
 
-    for index, response_format in enumerate(formats):
+    for response_format in formats:
         try:
             raw = openrouter_chat(
                 messages,
@@ -387,23 +443,30 @@ def openrouter_json(
                 response_format=response_format,
             )
 
-            try:
-                return extract_json(raw)
-            except RuntimeError as parse_error:
-                last_error = parse_error
+            parsed = extract_json(raw)
+            last_parsed = parsed
 
-                # A malformed/truncated answer is worth one fresh request.
-                if index < len(formats) - 1:
-                    continue
+            matched = find_matching_object(parsed)
 
-                # The final plain-text attempt is retried once below with a
-                # stronger instruction if it was not valid JSON.
-                break
+            if matched is not None:
+                return matched
 
-        except RuntimeError as request_error:
-            last_error = request_error
+            last_error = RuntimeError(
+                "AI returned valid JSON, but it did not contain the "
+                "required fields: "
+                + ", ".join(sorted(required_keys))
+                + "\nReturned JSON:\n"
+                + json.dumps(
+                    parsed,
+                    ensure_ascii=False,
+                    indent=2,
+                )[:8000]
+            )
 
-            message = str(request_error).lower()
+        except RuntimeError as error:
+            last_error = error
+
+            message = str(error).lower()
             format_related = any(
                 term in message
                 for term in (
@@ -417,38 +480,70 @@ def openrouter_json(
                 )
             )
 
-            if not format_related:
-                raise
+            if not format_related and response_format is None:
+                break
 
-    retry_messages = list(messages)
-    retry_messages.append(
-        {
-            "role": "user",
-            "content": (
-                "Return ONLY one complete valid JSON object. "
-                "Do not use Markdown fences. Do not truncate the response. "
-                "Do not add commentary before or after the JSON object."
-            ),
-        }
-    )
+    # One final compact retry. This is intentionally separate from the main
+    # long prompt so the model has very little opportunity to omit a field.
+    if required_keys:
+        key_list = ", ".join(sorted(required_keys))
 
-    try:
-        raw = openrouter_chat(
-            retry_messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"},
+        retry_messages = list(messages)
+        retry_messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "Your previous response could not be accepted because "
+                    "the required top-level fields were missing.\n\n"
+                    f"Return exactly ONE JSON object with these top-level "
+                    f"fields and no wrapper object: {key_list}\n\n"
+                    "Do not use Markdown fences. Do not add commentary. "
+                    "Do not rename fields. Include every field even when "
+                    "its value is an empty array or string."
+                ),
+            },
         )
-        return extract_json(raw)
-    except Exception as retry_error:
-        if last_error is not None:
-            raise RuntimeError(
-                "OpenRouter did not return a complete valid JSON object "
-                "after structured-output and retry fallbacks.\n"
-                f"Last error: {retry_error}\n"
-                f"Earlier error: {last_error}"
-            ) from retry_error
-        raise
+
+        try:
+            raw = openrouter_chat(
+                retry_messages,
+                temperature=0.2,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+            )
+
+            parsed = extract_json(raw)
+            matched = find_matching_object(parsed)
+
+            if matched is not None:
+                return matched
+
+            last_parsed = parsed
+
+        except Exception as retry_error:
+            last_error = retry_error
+
+    details = ""
+    if last_parsed is not None:
+        details = (
+            "\nLast parsed JSON:\n"
+            + json.dumps(
+                last_parsed,
+                ensure_ascii=False,
+                indent=2,
+            )[:8000]
+        )
+
+    raise RuntimeError(
+        "OpenRouter did not return the required JSON object."
+        + details
+        + (
+            "\nLast error: "
+            + str(last_error)
+            if last_error is not None
+            else ""
+        )
+    )
 
 
 # ============================================================
@@ -500,6 +595,11 @@ def extract_json(text):
 # ============================================================
 
 def validate_content(data):
+    if not isinstance(data, dict):
+        raise RuntimeError(
+            "Generated content must be a JSON object."
+        )
+
     required = [
         "theme",
         "caption",
@@ -834,6 +934,18 @@ real life that a real person could naturally share.
         temperature=0.9,
         max_tokens=6000,
         schema=CONTENT_JSON_SCHEMA,
+        required_keys=[
+            "theme",
+            "caption",
+            "description",
+            "seo_keywords",
+            "facebook_instagram_hashtags",
+            "linkedin_hashtags",
+            "image_count",
+            "image_headlines",
+            "image_supporting_text",
+            "image_prompts",
+        ],
     )
 
     validate_content(data)
@@ -962,6 +1074,10 @@ Return ONLY:
         temperature=0.1,
         max_tokens=800,
         schema=ORIGINALITY_JSON_SCHEMA,
+        required_keys=[
+            "original",
+            "reason",
+        ],
     )
 
     original = result.get(

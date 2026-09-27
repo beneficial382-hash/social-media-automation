@@ -46,5 +46,11 @@
   "image_urls": [
     "https://raw.githubusercontent.com/beneficial382-hash/social-media-automation/main/site/media/2026-09-27-the-subtle-boundary-between-productive-self-relian-1.jpg"
   ],
-  "publication_status": "pending"
+  "publication_status": "published",
+  "published_at_utc": "2026-09-27T02:23:09.936009+00:00",
+  "buffer_posts": {
+    "facebook": "6ab87df14b4b9f2c1c5f67d0",
+    "instagram": "6ab87df9ccccb9429c412c9a",
+    "linkedin": "6ab87e034b4b9f2c1c5f68f1"
+  }
 }

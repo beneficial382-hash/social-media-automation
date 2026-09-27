@@ -200,7 +200,8 @@ def all_previous_themes(history):
 def openrouter_chat(
     messages,
     temperature=0.8,
-    max_tokens=3000,
+    max_tokens=6000,
+    response_format=None,
 ):
     headers = {
         "Authorization": (
@@ -223,6 +224,9 @@ def openrouter_chat(
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+
+    if response_format is not None:
+        payload["response_format"] = response_format
 
     response = requests.post(
         OPENROUTER_CHAT_URL,
@@ -270,6 +274,181 @@ def openrouter_chat(
         content = "\n".join(parts)
 
     return str(content).strip()
+
+
+# ============================================================
+# STRUCTURED JSON HELPERS
+# ============================================================
+
+CONTENT_JSON_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "daily_social_media_content",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "theme": {"type": "string"},
+                "caption": {"type": "string"},
+                "description": {"type": "string"},
+                "seo_keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "facebook_instagram_hashtags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "linkedin_hashtags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "image_count": {
+                    "type": "integer",
+                    "enum": [1, 2],
+                },
+                "image_headlines": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "image_supporting_text": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "image_prompts": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
+            "required": [
+                "theme",
+                "caption",
+                "description",
+                "seo_keywords",
+                "facebook_instagram_hashtags",
+                "linkedin_hashtags",
+                "image_count",
+                "image_headlines",
+                "image_supporting_text",
+                "image_prompts",
+            ],
+        },
+    },
+}
+
+ORIGINALITY_JSON_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "originality_audit",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "original": {"type": "boolean"},
+                "reason": {"type": "string"},
+            },
+            "required": ["original", "reason"],
+        },
+    },
+}
+
+
+def openrouter_json(
+    messages,
+    temperature=0.8,
+    max_tokens=6000,
+    schema=None,
+):
+    """Request JSON with structured-output fallbacks.
+
+    The preferred request uses JSON Schema. If the selected model/provider
+    rejects that format, retry with the widely supported JSON-object mode.
+    Finally, retry once without response_format while explicitly requiring
+    JSON. The caller still validates the resulting object before using it.
+    """
+    formats = []
+
+    if schema is not None:
+        formats.append(schema)
+
+    formats.append({"type": "json_object"})
+    formats.append(None)
+
+    last_error = None
+
+    for index, response_format in enumerate(formats):
+        try:
+            raw = openrouter_chat(
+                messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+            )
+
+            try:
+                return extract_json(raw)
+            except RuntimeError as parse_error:
+                last_error = parse_error
+
+                # A malformed/truncated answer is worth one fresh request.
+                if index < len(formats) - 1:
+                    continue
+
+                # The final plain-text attempt is retried once below with a
+                # stronger instruction if it was not valid JSON.
+                break
+
+        except RuntimeError as request_error:
+            last_error = request_error
+
+            message = str(request_error).lower()
+            format_related = any(
+                term in message
+                for term in (
+                    "response_format",
+                    "json_schema",
+                    "json schema",
+                    "structured output",
+                    "not supported",
+                    "unsupported",
+                    "invalid parameter",
+                )
+            )
+
+            if not format_related:
+                raise
+
+    retry_messages = list(messages)
+    retry_messages.append(
+        {
+            "role": "user",
+            "content": (
+                "Return ONLY one complete valid JSON object. "
+                "Do not use Markdown fences. Do not truncate the response. "
+                "Do not add commentary before or after the JSON object."
+            ),
+        }
+    )
+
+    try:
+        raw = openrouter_chat(
+            retry_messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format={"type": "json_object"},
+        )
+        return extract_json(raw)
+    except Exception as retry_error:
+        if last_error is not None:
+            raise RuntimeError(
+                "OpenRouter did not return a complete valid JSON object "
+                "after structured-output and retry fallbacks.\n"
+                f"Last error: {retry_error}\n"
+                f"Earlier error: {last_error}"
+            ) from retry_error
+        raise
 
 
 # ============================================================
@@ -641,7 +820,7 @@ The content should feel like a thoughtful observation about
 real life that a real person could naturally share.
 """
 
-    raw = openrouter_chat(
+    data = openrouter_json(
         [
             {
                 "role": "system",
@@ -653,10 +832,9 @@ real life that a real person could naturally share.
             },
         ],
         temperature=0.9,
-        max_tokens=3000,
+        max_tokens=6000,
+        schema=CONTENT_JSON_SCHEMA,
     )
-
-    data = extract_json(raw)
 
     validate_content(data)
 
@@ -767,7 +945,7 @@ Return ONLY:
 }}
 """
 
-    raw = openrouter_chat(
+    result = openrouter_json(
         [
             {
                 "role": "system",
@@ -782,10 +960,9 @@ Return ONLY:
             },
         ],
         temperature=0.1,
-        max_tokens=500,
+        max_tokens=800,
+        schema=ORIGINALITY_JSON_SCHEMA,
     )
-
-    result = extract_json(raw)
 
     original = result.get(
         "original",

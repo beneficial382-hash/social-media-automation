@@ -277,5 +277,39 @@
       "instagram": "6ab8801e9f89edbefe866e07",
       "linkedin": "6ab880284b4b9f2c1c5fa1f1"
     }
+  },
+  {
+    "date": "2026-09-27",
+    "generated_at_utc": "2026-09-27T09:14:11.001694+00:00",
+    "published_at_utc": "2026-09-27T09:14:47.096208+00:00",
+    "author": "Fazl Ullah Azaad",
+    "theme": "The critical transition from problem-solving capability to problem-selection discipline.",
+    "caption": "Early in our professional lives, value is almost entirely measured by problem-solving ability.\n\nWhen a complication lands on your desk, you take pride in unraveling the knot. You figure out the workaround, debug the bottleneck, and patch the leak. Solving things feels productive, signals competence, and earns quick praise.\n\nYet as responsibility grows, that same instinct can quietly become a trap.\n\nWhen you are naturally good at resolving difficulties, people instinctively bring you their friction, their unexamined bottlenecks, and their self-created emergencies. And because your baseline impulse is to be helpful, you set to work fixing them.\n\nWhat often gets overlooked is a deeper question: Does this problem actually deserve to be solved?\n\nMany operational problems exist only because a broken assumption went unchallenged, or because someone preferred an elaborate workaround over a clean standard. When you devote your sharpest thinking to brilliantly resolving a secondary issue, you often end up legitimizing the very dysfunction that created it.\n\nTrue operational maturity is not about resolving every challenge faster.\n\nIt is about having the judgment to step back, examine the premise, and recognize when the most effective solution is not to fix the problem—but to stop indulging it altogether.",
+    "description": "A thoughtful reflection on why high performers must evolve from reflexively solving every problem that appears to selectively deciding which problems are genuinely worth solving.",
+    "seo_keywords": [
+      "problem selection",
+      "strategic thinking",
+      "professional maturity",
+      "workplace effectiveness",
+      "leadership judgment",
+      "high performance",
+      "critical thinking",
+      "decision making"
+    ],
+    "image_count": 1,
+    "image_headlines": [
+      "Solving the Wrong Problem"
+    ],
+    "image_supporting_text": [
+      "Capability solves complexity. Maturity decides if it deserves to exist."
+    ],
+    "image_files": [
+      "site/media/2026-09-27-the-critical-transition-from-problem-solving-capab-1.jpg"
+    ],
+    "buffer_posts": {
+      "facebook": "6ab8de6d0f79a37c5d4c4aed",
+      "instagram": "6ab8de7205811e573749c419",
+      "linkedin": "6ab8de7cccccb9429c4b45dc"
+    }
   }
 ]

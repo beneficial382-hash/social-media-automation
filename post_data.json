@@ -45,5 +45,11 @@
   "image_urls": [
     "https://raw.githubusercontent.com/beneficial382-hash/social-media-automation/main/site/media/2026-09-27-the-critical-transition-from-problem-solving-capab-1.jpg"
   ],
-  "publication_status": "pending"
+  "publication_status": "published",
+  "published_at_utc": "2026-09-27T09:14:47.096208+00:00",
+  "buffer_posts": {
+    "facebook": "6ab8de6d0f79a37c5d4c4aed",
+    "instagram": "6ab8de7205811e573749c419",
+    "linkedin": "6ab8de7cccccb9429c4b45dc"
+  }
 }

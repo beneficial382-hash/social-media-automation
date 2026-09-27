@@ -45,5 +45,11 @@
   "image_urls": [
     "https://raw.githubusercontent.com/beneficial382-hash/social-media-automation/main/site/media/2026-09-27-the-critical-discipline-of-separating-decision-qua-1.jpg"
   ],
-  "publication_status": "pending"
+  "publication_status": "published",
+  "published_at_utc": "2026-09-27T02:32:19.166968+00:00",
+  "buffer_posts": {
+    "facebook": "6ab8801a9f89edbefe866db8",
+    "instagram": "6ab8801e9f89edbefe866e07",
+    "linkedin": "6ab880284b4b9f2c1c5fa1f1"
+  }
 }

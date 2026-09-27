@@ -48,5 +48,11 @@
   "image_urls": [
     "https://raw.githubusercontent.com/beneficial382-hash/social-media-automation/main/site/media/2026-09-27-the-subtle-tendency-to-retreat-into-familiar-tasks-1.jpg"
   ],
-  "publication_status": "pending"
+  "publication_status": "published",
+  "published_at_utc": "2026-09-27T02:27:14.709303+00:00",
+  "buffer_posts": {
+    "facebook": "6ab87ee905811e57373ff3e2",
+    "instagram": "6ab87eee9f89edbefe864a3b",
+    "linkedin": "6ab87ef83d66d464e5c4d25c"
+  }
 }

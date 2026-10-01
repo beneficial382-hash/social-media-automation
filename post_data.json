@@ -46,5 +46,11 @@
   "image_urls": [
     "https://raw.githubusercontent.com/beneficial382-hash/social-media-automation/main/site/media/2026-10-01-the-critical-distinction-between-borrowed-conclusi-1.jpg"
   ],
-  "publication_status": "pending"
+  "publication_status": "published",
+  "published_at_utc": "2026-10-01T13:22:02.401080+00:00",
+  "buffer_posts": {
+    "facebook": "6abe5e610a3759a258b35c30",
+    "instagram": "6abe5e6541ba92454f25ddad",
+    "linkedin": "6abe5e700a3759a258b3600e"
+  }
 }

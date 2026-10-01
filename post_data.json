@@ -46,5 +46,11 @@
   "image_urls": [
     "https://raw.githubusercontent.com/beneficial382-hash/social-media-automation/main/site/media/2026-10-01-the-critical-distinction-between-being-genuinely-r-1.jpg"
   ],
-  "publication_status": "pending"
+  "publication_status": "published",
+  "published_at_utc": "2026-10-01T13:19:10.531120+00:00",
+  "buffer_posts": {
+    "facebook": "6abe5db4a1257d1a53a17c09",
+    "instagram": "6abe5db9a1257d1a53a17cfc",
+    "linkedin": "6abe5dc4a39e324a5b774de4"
+  }
 }

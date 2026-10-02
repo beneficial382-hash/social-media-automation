@@ -46,5 +46,11 @@
   "image_urls": [
     "https://raw.githubusercontent.com/beneficial382-hash/social-media-automation/main/site/media/2026-10-02-the-subtle-danger-of-letting-temporary-survival-ta-1.jpg"
   ],
-  "publication_status": "pending"
+  "publication_status": "published",
+  "published_at_utc": "2026-10-02T09:44:56.271295+00:00",
+  "buffer_posts": {
+    "facebook": "6abf7cfc1b2a6a8e15581683",
+    "instagram": "6abf7d0381e421bfcd74e9e4",
+    "linkedin": "6abf7d0ef781c1ecf15ebd30"
+  }
 }

@@ -45,5 +45,11 @@
   "image_urls": [
     "https://raw.githubusercontent.com/beneficial382-hash/social-media-automation/main/site/media/2026-10-03-the-hidden-cost-of-perpetual-optionality-over-deli-1.jpg"
   ],
-  "publication_status": "pending"
+  "publication_status": "published",
+  "published_at_utc": "2026-10-03T09:08:25.614191+00:00",
+  "buffer_posts": {
+    "facebook": "6ac0c5edca55406b4b2a308d",
+    "instagram": "6ac0c5f4ca55406b4b2a316b",
+    "linkedin": "6ac0c5ffe22a2e5172ba6160"
+  }
 }
